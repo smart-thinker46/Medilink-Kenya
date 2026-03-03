@@ -1,0 +1,400 @@
+import React from "react";
+import { View, Text, ScrollView, TouchableOpacity } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
+import { MotiView } from "moti";
+import { CheckCircle, Phone, PhoneOff, MessageCircle } from "lucide-react-native";
+
+import ScreenLayout from "@/components/ScreenLayout";
+import { useAppTheme } from "@/components/ThemeProvider";
+import { useNotifications } from "@/utils/useNotifications";
+import { useToast } from "@/components/ToastProvider";
+import apiClient from "@/utils/api";
+import { useAuthStore } from "@/utils/auth/store";
+
+export default function NotificationsScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { theme, isDark } = useAppTheme();
+  const { notifications, markRead } = useNotifications();
+  const { showToast } = useToast();
+  const { auth } = useAuthStore();
+
+  const parseNotificationData = (notification) => {
+    const raw = notification?.data;
+    if (!raw) return null;
+    if (typeof raw === "object") return raw;
+    if (typeof raw === "string") {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const role = String(auth?.user?.role || "").toUpperCase();
+  const roleVideoRoute = {
+    PATIENT: "/(app)/(patient)/video-call",
+    MEDIC: "/(app)/(medic)/video-call",
+    HOSPITAL_ADMIN: "/(app)/(hospital)/video-call",
+    PHARMACY_ADMIN: "/(app)/(pharmacy)/video-call",
+    SUPER_ADMIN: "/(app)/(admin)/video-call",
+  };
+  const roleChatRoute = {
+    PATIENT: "/(app)/(patient)/chat",
+    MEDIC: "/(app)/(medic)/chat",
+    HOSPITAL_ADMIN: "/(app)/(hospital)/chat",
+    PHARMACY_ADMIN: "/(app)/(pharmacy)/chat",
+    SUPER_ADMIN: "/(app)/(admin)/chat",
+  };
+
+  const buildVideoRoute = (route, data, autoAnswer = false) => {
+    const params = new URLSearchParams();
+    if (data?.sessionId) params.append("incomingSessionId", String(data.sessionId));
+    if (data?.callerId) params.append("participantId", String(data.callerId));
+    if (data?.callerName) params.append("participantName", String(data.callerName));
+    if (data?.callerRole) params.append("participantRole", String(data.callerRole));
+    if (data?.callType) params.append("callType", String(data.callType));
+    if (data?.mode) params.append("mode", String(data.mode));
+    params.append("autoAnswer", autoAnswer ? "1" : "0");
+    const query = params.toString();
+    return query ? `${route}?${query}` : route;
+  };
+
+  const handleAnswerCall = async (notification) => {
+    const data = parseNotificationData(notification) || {};
+    const sessionId = data.sessionId || notification?.relatedId;
+    if (!sessionId) {
+      showToast("Call session missing in notification.", "warning");
+      return;
+    }
+    markRead(notification.id);
+    showToast("Opening call screen...", "success");
+    const route = roleVideoRoute[role] || "/(app)/(shared)/notifications";
+    router.push(buildVideoRoute(route, data, true));
+  };
+
+  const handleRejectCall = async (notification) => {
+    const data = parseNotificationData(notification) || {};
+    const sessionId = data.sessionId || notification?.relatedId;
+    if (!sessionId) {
+      showToast("Call session missing in notification.", "warning");
+      return;
+    }
+    try {
+      await apiClient.request(`/video-calls/${sessionId}/end`, {
+        method: "POST",
+        body: JSON.stringify({
+          status: "REJECTED",
+          ended_by: auth?.user?.id,
+        }),
+      });
+      markRead(notification.id);
+      showToast("Call rejected.", "success");
+    } catch (error) {
+      showToast(error.message || "Failed to reject call.", "error");
+    }
+  };
+
+  const getSupportRequestId = (notification) => {
+    const data = parseNotificationData(notification) || {};
+    return String(data.requestId || notification?.relatedId || "").trim();
+  };
+
+  const handleAcceptSupportRequest = async (notification) => {
+    const data = parseNotificationData(notification) || {};
+    const requestId = getSupportRequestId(notification);
+    if (!requestId) {
+      showToast("Support request id missing.", "warning");
+      return;
+    }
+    try {
+      await apiClient.respondSupportChatRequest(requestId, true);
+      markRead(notification.id);
+      showToast("Support request accepted.", "success");
+      const requesterId = String(data.requesterId || "").trim();
+      const route = roleChatRoute[role];
+      if (route && requesterId) {
+        router.push(`${route}?userId=${requesterId}`);
+      }
+    } catch (error) {
+      showToast(error.message || "Failed to accept support request.", "error");
+    }
+  };
+
+  const handleRejectSupportRequest = async (notification) => {
+    const requestId = getSupportRequestId(notification);
+    if (!requestId) {
+      showToast("Support request id missing.", "warning");
+      return;
+    }
+    try {
+      await apiClient.respondSupportChatRequest(requestId, false);
+      markRead(notification.id);
+      showToast("Support request rejected.", "success");
+    } catch (error) {
+      showToast(error.message || "Failed to reject support request.", "error");
+    }
+  };
+
+  const handleOpenAcceptedSupportChat = (notification) => {
+    const data = parseNotificationData(notification) || {};
+    const adminId = String(data.adminId || "").trim();
+    if (!adminId) {
+      showToast("Admin information missing.", "warning");
+      return;
+    }
+    const route = roleChatRoute[role];
+    if (!route) {
+      showToast("Chat route unavailable for this role.", "warning");
+      return;
+    }
+    markRead(notification.id);
+    router.push(`${route}?userId=${adminId}`);
+  };
+
+  return (
+    <ScreenLayout>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingTop: insets.top + 16,
+          paddingBottom: insets.bottom + 20,
+          paddingHorizontal: 24,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text
+          style={{
+            fontSize: 22,
+            fontFamily: "Nunito_700Bold",
+            color: theme.text,
+            marginBottom: 16,
+          }}
+        >
+          Notifications
+        </Text>
+
+        {notifications.length === 0 ? (
+          <View
+            style={{
+              backgroundColor: theme.card,
+              borderRadius: 16,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: theme.border,
+            }}
+          >
+            <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+              No notifications yet.
+            </Text>
+          </View>
+        ) : (
+          notifications.map((notification, index) => (
+            <MotiView
+              key={notification.id}
+              from={{ opacity: 0, translateY: 10 }}
+              animate={{ opacity: 1, translateY: 0 }}
+              transition={{ type: "timing", duration: 400, delay: index * 60 }}
+              style={{
+                backgroundColor: notification.isRead
+                  ? theme.card
+                  : `${theme.primary}10`,
+                borderRadius: 16,
+                padding: 16,
+                borderWidth: 1,
+                borderColor: theme.border,
+                marginBottom: 12,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontFamily: "Inter_600SemiBold",
+                  color: theme.text,
+                }}
+              >
+                {notification.title || "Notification"}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontFamily: "Inter_400Regular",
+                  color: theme.textSecondary,
+                  marginTop: 6,
+                }}
+              >
+                {notification.message}
+              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginTop: 10,
+                }}
+              >
+                <Text style={{ fontSize: 11, color: theme.textSecondary }}>
+                  {notification.createdAt || ""}
+                </Text>
+                {!notification.isRead && (
+                  <TouchableOpacity
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      backgroundColor: theme.primary,
+                      borderRadius: 10,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                    onPress={() => {
+                      markRead(notification.id);
+                      showToast("Marked as read.", "success");
+                    }}
+                  >
+                    <CheckCircle color="#FFFFFF" size={14} />
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontFamily: "Inter_600SemiBold",
+                        color: "#FFFFFF",
+                      }}
+                    >
+                      Mark read
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {String(notification.type || "").toLowerCase() === "video_call" && (
+                <View
+                  style={{
+                    marginTop: 10,
+                    flexDirection: "row",
+                    gap: 8,
+                  }}
+                >
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: theme.success,
+                      gap: 6,
+                    }}
+                    onPress={() => handleAnswerCall(notification)}
+                  >
+                    <Phone color="#FFFFFF" size={14} />
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
+                      Accept
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: theme.error,
+                      gap: 6,
+                    }}
+                    onPress={() => handleRejectCall(notification)}
+                  >
+                    <PhoneOff color="#FFFFFF" size={14} />
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
+                      Reject
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {String(notification.type || "").toUpperCase() === "SUPPORT_CHAT_REQUEST" &&
+                role === "SUPER_ADMIN" && (
+                  <View
+                    style={{
+                      marginTop: 10,
+                      flexDirection: "row",
+                      gap: 8,
+                    }}
+                  >
+                    <TouchableOpacity
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        paddingHorizontal: 10,
+                        paddingVertical: 8,
+                        borderRadius: 10,
+                        backgroundColor: theme.success,
+                        gap: 6,
+                      }}
+                      onPress={() => handleAcceptSupportRequest(notification)}
+                    >
+                      <Phone color="#FFFFFF" size={14} />
+                      <Text
+                        style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}
+                      >
+                        Accept Chat
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        paddingHorizontal: 10,
+                        paddingVertical: 8,
+                        borderRadius: 10,
+                        backgroundColor: theme.error,
+                        gap: 6,
+                      }}
+                      onPress={() => handleRejectSupportRequest(notification)}
+                    >
+                      <PhoneOff color="#FFFFFF" size={14} />
+                      <Text
+                        style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}
+                      >
+                        Reject
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              {String(notification.type || "").toUpperCase() === "SUPPORT_CHAT_ACCEPTED" &&
+                role !== "SUPER_ADMIN" && (
+                  <View
+                    style={{
+                      marginTop: 10,
+                      flexDirection: "row",
+                      gap: 8,
+                    }}
+                  >
+                    <TouchableOpacity
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        paddingHorizontal: 10,
+                        paddingVertical: 8,
+                        borderRadius: 10,
+                        backgroundColor: theme.primary,
+                        gap: 6,
+                      }}
+                      onPress={() => handleOpenAcceptedSupportChat(notification)}
+                    >
+                      <MessageCircle color="#FFFFFF" size={14} />
+                      <Text
+                        style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}
+                      >
+                        Open Chat
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+            </MotiView>
+          ))
+        )}
+      </ScrollView>
+    </ScreenLayout>
+  );
+}

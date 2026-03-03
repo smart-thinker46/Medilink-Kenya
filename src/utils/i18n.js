@@ -1,0 +1,223 @@
+import { useMemo } from "react";
+import { useAppTheme } from "@/components/ThemeProvider";
+
+const translations = {
+  en: {
+    language: "Language",
+    english: "English",
+    swahili: "Swahili",
+    sign_in: "Sign In",
+    sign_up: "Sign Up",
+    welcome_back: "Welcome back!",
+    welcome_subtitle: "Sign in to continue managing your healthcare journey",
+    email: "Email",
+    password: "Password",
+    enter_email: "Enter your email",
+    enter_password: "Enter your password",
+    forgot_password: "Forgot Password?",
+    no_account: "Don't have an account?",
+    create_account: "Create Account",
+    account_created: "Account Created!",
+    account_created_message: "Welcome to Medilink Kenya. Your account has been created successfully.",
+    continue: "Continue",
+    signup_failed: "Signup Failed",
+    login_failed: "Login Failed",
+    role_required: "Role Required",
+    select_role: "Please select your role to continue",
+    role_patient: "Patient",
+    role_medic: "Medical Professional",
+    role_hospital: "Hospital Administrator",
+    role_pharmacy: "Pharmacy",
+    role_patient_desc: "Access quality healthcare from verified professionals",
+    role_medic_desc: "Connect with patients and manage your practice",
+    role_hospital_desc: "Manage healthcare facility operations",
+    role_pharmacy_desc: "Manage inventory and serve customers",
+    full_name: "Full Name",
+    last_name: "Last Name",
+    phone_number: "Phone Number",
+    confirm_password: "Confirm Password",
+    basic_info_title: "Basic Information",
+    basic_info_subtitle: "Tell us a bit about yourself",
+    next: "Next",
+    create: "Create Account",
+    choose_role_title: "Choose Your Role",
+    choose_role_subtitle: "Select how you'll be using Medilink",
+    welcome_title: "Modern care, beautifully connected.",
+    welcome_tagline: "One platform for patients, hospitals, medics, and pharmacies.",
+    get_started: "Get Started",
+    already_have_account: "Already have an account?",
+    settings: "Settings",
+    appearance: "Appearance",
+    account: "Account",
+    edit_profile: "Edit Profile",
+    language: "Language",
+    currency: "Currency",
+    system: "System",
+    light: "Light",
+    dark: "Dark",
+    logout: "Log Out",
+    dashboard: "Dashboard",
+    quick_actions: "Quick Actions",
+    communication: "Communication",
+    overview: "Overview",
+    patient_dashboard: "Patient Dashboard",
+    medic_dashboard: "Medic Dashboard",
+    hospital_dashboard: "Hospital Dashboard",
+    pharmacy_dashboard: "Pharmacy Dashboard",
+    admin_dashboard: "Super Admin Dashboard",
+    good_morning: "Good morning,",
+    book_appointment: "Book Appointment",
+    book_appointment_desc: "Schedule a visit",
+    medical_records: "Medical Records",
+    medical_records_desc: "View your history",
+    emergency: "Emergency",
+    emergency_desc: "Get immediate help",
+    quick_actions: "Quick Actions",
+    communication: "Communication",
+    profile_completion: "Profile Completion",
+    notifications: "Notifications",
+    broadcast_message: "Broadcast Message",
+    send_message: "Send Message",
+    channel: "Channel",
+  },
+  sw: {
+    language: "Lugha",
+    english: "Kiingereza",
+    swahili: "Kiswahili",
+    sign_in: "Ingia",
+    sign_up: "Jisajili",
+    welcome_back: "Karibu tena!",
+    welcome_subtitle: "Ingia kuendelea kusimamia safari yako ya afya",
+    email: "Barua pepe",
+    password: "Nenosiri",
+    enter_email: "Weka barua pepe",
+    enter_password: "Weka nenosiri",
+    forgot_password: "Umesahau nenosiri?",
+    no_account: "Huna akaunti?",
+    create_account: "Tengeneza Akaunti",
+    account_created: "Akaunti Imetengenezwa!",
+    account_created_message: "Karibu Medilink Kenya. Akaunti yako imeundwa.",
+    continue: "Endelea",
+    signup_failed: "Usajili Umeshindikana",
+    login_failed: "Kuingia Kumezuiliwa",
+    role_required: "Aina Inahitajika",
+    select_role: "Chagua aina yako kuendelea",
+    role_patient: "Mgonjwa",
+    role_medic: "Mtaalamu wa Afya",
+    role_hospital: "Msimamizi wa Hospitali",
+    role_pharmacy: "Famasi",
+    role_patient_desc: "Pata huduma bora kutoka kwa wataalamu waliothibitishwa",
+    role_medic_desc: "Ungana na wagonjwa na simamia kazi yako",
+    role_hospital_desc: "Simamia shughuli za kituo cha afya",
+    role_pharmacy_desc: "Simamia bidhaa na kuwahudumia wateja",
+    full_name: "Jina Kamili",
+    last_name: "Jina la Mwisho",
+    phone_number: "Namba ya Simu",
+    confirm_password: "Thibitisha Nenosiri",
+    basic_info_title: "Taarifa za Msingi",
+    basic_info_subtitle: "Tuambie kidogo kuhusu wewe",
+    next: "Endelea",
+    create: "Tengeneza Akaunti",
+    choose_role_title: "Chagua Aina Yako",
+    choose_role_subtitle: "Chagua jinsi utakavyotumia Medilink",
+    welcome_title: "Huduma ya kisasa, iliyounganishwa vizuri.",
+    welcome_tagline: "Jukwaa moja kwa wagonjwa, hospitali, madaktari na famasi.",
+    get_started: "Anza",
+    already_have_account: "Una akaunti tayari?",
+    settings: "Mipangilio",
+    appearance: "Mwonekano",
+    account: "Akaunti",
+    edit_profile: "Hariri Wasifu",
+    language: "Lugha",
+    currency: "Sarafu",
+    system: "Mfumo",
+    light: "Mwanga",
+    dark: "Giza",
+    logout: "Toka",
+    dashboard: "Dashibodi",
+    quick_actions: "Hatua za Haraka",
+    communication: "Mawasiliano",
+    overview: "Muhtasari",
+    patient_dashboard: "Dashibodi ya Mgonjwa",
+    medic_dashboard: "Dashibodi ya Daktari",
+    hospital_dashboard: "Dashibodi ya Hospitali",
+    pharmacy_dashboard: "Dashibodi ya Famasi",
+    admin_dashboard: "Dashibodi ya Msimamizi Mkuu",
+    good_morning: "Habari za asubuhi,",
+    book_appointment: "Weka Miadi",
+    book_appointment_desc: "Panga ziara",
+    medical_records: "Rekodi za Matibabu",
+    medical_records_desc: "Tazama historia yako",
+    emergency: "Dharura",
+    emergency_desc: "Pata msaada wa haraka",
+    quick_actions: "Hatua za Haraka",
+    communication: "Mawasiliano",
+    profile_completion: "Ukamilishaji wa Wasifu",
+    notifications: "Arifa",
+    broadcast_message: "Tuma Ujumbe",
+    send_message: "Tuma Ujumbe",
+    channel: "Njia",
+  },
+};
+
+const localeMap = {
+  en: "en-US",
+  sw: "sw-KE",
+};
+
+export const useI18n = () => {
+  const { language, setLanguage, currency, setCurrency } = useAppTheme();
+  const locale = localeMap[language] || "en-US";
+
+  const t = useMemo(
+    () => (key) => translations[language]?.[key] || translations.en[key] || key,
+    [language],
+  );
+
+  const formatDateTime = (value, options) => {
+    if (!value) return "";
+    const date = value instanceof Date ? value : new Date(value);
+    const formatter = new Intl.DateTimeFormat(locale, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      ...(options || {}),
+    });
+    return formatter.format(date);
+  };
+
+  const formatDate = (value, options) => {
+    if (!value) return "";
+    const date = value instanceof Date ? value : new Date(value);
+    const formatter = new Intl.DateTimeFormat(locale, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      ...(options || {}),
+    });
+    return formatter.format(date);
+  };
+
+  const formatCurrency = (value, currency = "KES") => {
+    const number = Number(value) || 0;
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(number);
+  };
+
+  return {
+    t,
+    language,
+    setLanguage,
+    currency,
+    setCurrency,
+    locale,
+    formatDateTime,
+    formatDate,
+    formatCurrency: (value) => formatCurrency(value, currency || "KES"),
+  };
+};
