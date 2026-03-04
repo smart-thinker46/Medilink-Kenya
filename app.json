@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon-square.png",
     "scheme": "medilink",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
