@@ -36,3 +36,7 @@ app-example
 
 caches/
 public/
+
+# Use CNG in EAS Build (generate native folders in cloud).
+/android
+/ios
