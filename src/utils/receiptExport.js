@@ -3,7 +3,7 @@ import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system";
 
-const DEFAULT_LOGO = require("../../assets/images/Medilink-logo.png");
+const DEFAULT_LOGO = require("../assets/images/Medilink-logo.png");
 
 const formatCurrency = (amount, currency = "KES") => {
   const numeric = Number(amount || 0);

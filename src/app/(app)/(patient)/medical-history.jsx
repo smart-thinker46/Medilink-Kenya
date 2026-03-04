@@ -20,6 +20,7 @@ import {
   Search,
   Filter,
   Sparkles,
+  ShieldCheck,
 } from "lucide-react-native";
 import { Image } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -68,6 +69,18 @@ export default function MedicalHistoryScreen() {
     onError: (error) => {
       showToast(error.message || "AI summary unavailable.", "error");
     },
+  });
+  const accessRequestsQuery = useQuery({
+    queryKey: ["medical-record-access-requests", patientId],
+    queryFn: () =>
+      apiClient.getMedicalRecordAccessRequests({
+        status: "PENDING",
+      }),
+    enabled: Boolean(patientId),
+  });
+  const respondAccessMutation = useMutation({
+    mutationFn: ({ requestId, accept }) =>
+      apiClient.respondMedicalRecordAccessRequest(requestId, accept),
   });
 
   const medicalRecords = useMemo(() => {
@@ -160,6 +173,26 @@ export default function MedicalHistoryScreen() {
   };
 
   const formatDate = (dateString) => formatLocaleDate(dateString);
+
+  const accessRequests = Array.isArray(accessRequestsQuery.data)
+    ? accessRequestsQuery.data
+    : [];
+
+  const handleAccessResponse = async (requestId, accept) => {
+    if (!requestId) return;
+    try {
+      await respondAccessMutation.mutateAsync({ requestId, accept });
+      showToast(
+        accept
+          ? "Access approved. Medic can now view your records."
+          : "Access request declined.",
+        "success",
+      );
+      accessRequestsQuery.refetch();
+    } catch (error) {
+      showToast(error?.message || "Failed to update access request.", "error");
+    }
+  };
 
   const renderRecordCard = ({ item, index }) => {
     const TypeIcon = getTypeIcon(item.type);
@@ -661,6 +694,106 @@ export default function MedicalHistoryScreen() {
               </TouchableOpacity>
             ))}
           </ScrollView>
+        </View>
+
+        <View style={{ paddingHorizontal: 24, marginBottom: 16 }}>
+          <View
+            style={{
+              backgroundColor: theme.card,
+              borderRadius: 14,
+              borderWidth: 1,
+              borderColor: theme.border,
+              padding: 14,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+              <ShieldCheck color={theme.primary} size={16} />
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontFamily: "Inter_700Bold",
+                  color: theme.text,
+                  marginLeft: 8,
+                }}
+              >
+                Record Access Requests
+              </Text>
+            </View>
+
+            {accessRequestsQuery.isLoading ? (
+              <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                Loading requests...
+              </Text>
+            ) : accessRequests.length === 0 ? (
+              <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                No pending medic access requests.
+              </Text>
+            ) : (
+              accessRequests.map((request) => (
+                <View
+                  key={request.id}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                    borderRadius: 12,
+                    backgroundColor: theme.surface,
+                    padding: 10,
+                    marginTop: 8,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: theme.text }}>
+                    {request?.medic?.fullName || request?.medic?.email || "Medic"} requested access
+                  </Text>
+                  <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 2 }}>
+                    {formatDate(request?.requestedAt)}
+                  </Text>
+                  {!!request?.note && (
+                    <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 4 }}>
+                      Note: {request.note}
+                    </Text>
+                  )}
+                  <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+                    <TouchableOpacity
+                      style={{
+                        flex: 1,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: theme.error,
+                        backgroundColor: `${theme.error}12`,
+                        paddingVertical: 8,
+                        alignItems: "center",
+                        opacity: respondAccessMutation.isLoading ? 0.7 : 1,
+                      }}
+                      onPress={() => handleAccessResponse(request.id, false)}
+                      disabled={respondAccessMutation.isLoading}
+                    >
+                      <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: theme.error }}>
+                        Decline
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={{
+                        flex: 1,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: theme.success,
+                        backgroundColor: `${theme.success}12`,
+                        paddingVertical: 8,
+                        alignItems: "center",
+                        opacity: respondAccessMutation.isLoading ? 0.7 : 1,
+                      }}
+                      onPress={() => handleAccessResponse(request.id, true)}
+                      disabled={respondAccessMutation.isLoading}
+                    >
+                      <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: theme.success }}>
+                        Accept
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
         </View>
 
         <View style={{ paddingHorizontal: 24, marginBottom: 16 }}>

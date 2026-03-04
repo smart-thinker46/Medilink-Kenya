@@ -12,6 +12,7 @@ import {
   MessageCircle,
   History,
   ShieldAlert,
+  Mail,
 } from "lucide-react-native";
 import ResponsiveTabBar from "@/components/ResponsiveTabBar";
 import { useNotifications } from "@/utils/useNotifications";
@@ -29,6 +30,7 @@ export default function AdminTabLayout() {
 
   const moreLinks = [
     { key: "chat", title: "Chat", href: "/(app)/(shared)/conversations", icon: MessageCircle },
+    { key: "email-center", title: "Email Center", href: "/(app)/(admin)/email-center", icon: Mail },
     { key: "video-call", title: "Video Call", href: "/(app)/(admin)/video-call", icon: Video },
     { key: "control-center", title: "Control Center", href: "/(app)/(admin)/control-center", icon: ShieldAlert },
     { key: "settings", title: "Settings", href: "/(app)/(admin)/settings", icon: Settings },
@@ -109,6 +111,7 @@ export default function AdminTabLayout() {
       <Tabs.Screen name="audit-logs" options={{ href: null }} />
       <Tabs.Screen name="complaints" options={{ href: null }} />
       <Tabs.Screen name="chat" options={{ href: null }} />
+      <Tabs.Screen name="email-center" options={{ href: null }} />
       <Tabs.Screen name="video-call" options={{ href: null }} />
       <Tabs.Screen name="control-center" options={{ href: null }} />
     </Tabs>

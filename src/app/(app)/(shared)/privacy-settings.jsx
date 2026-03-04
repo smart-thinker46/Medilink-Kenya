@@ -34,12 +34,24 @@ const normalizeSettings = (value) => ({
   ...(value && typeof value === "object" ? value : {}),
 });
 
+const PASSWORD_INTERVAL_OPTIONS = [
+  { value: 0, label: "Never" },
+  { value: 7, label: "7 days" },
+  { value: 14, label: "14 days" },
+  { value: 30, label: "30 days" },
+  { value: 60, label: "60 days" },
+  { value: 90, label: "90 days" },
+  { value: 180, label: "180 days" },
+  { value: 365, label: "365 days" },
+];
+
 export default function PrivacySettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme } = useAppTheme();
   const { showToast } = useToast();
   const [settings, setSettings] = useState(DEFAULT_PRIVACY_SETTINGS);
+  const [passwordIntervalDays, setPasswordIntervalDays] = useState(0);
 
   const profileQuery = useQuery({
     queryKey: ["profile", "privacy-settings"],
@@ -51,6 +63,8 @@ export default function PrivacySettingsScreen() {
   useEffect(() => {
     if (!profileQuery.data) return;
     setSettings(normalizeSettings(profile?.privacySettings));
+    const interval = Number(profile?.passwordUpdateIntervalDays || 0);
+    setPasswordIntervalDays(Number.isFinite(interval) ? interval : 0);
   }, [profile?.privacySettings, profileQuery.data]);
 
   const saveMutation = useMutation({
@@ -61,6 +75,17 @@ export default function PrivacySettingsScreen() {
     },
     onError: (error) => {
       showToast(error?.message || "Failed to save privacy settings.", "error");
+    },
+  });
+
+  const passwordPolicyMutation = useMutation({
+    mutationFn: (intervalDays) => apiClient.updatePasswordPolicy(intervalDays),
+    onSuccess: () => {
+      showToast("Password update interval saved.", "success");
+      profileQuery.refetch();
+    },
+    onError: (error) => {
+      showToast(error?.message || "Failed to update password interval.", "error");
     },
   });
 
@@ -134,6 +159,21 @@ export default function PrivacySettingsScreen() {
       description: "Receive promotional offers and announcements by email.",
     },
   ];
+
+  const daysRemaining = Number(profile?.passwordDaysRemaining);
+  const passwordExpired = Boolean(profile?.passwordExpired);
+  const expiryText = profile?.passwordExpiresAt
+    ? new Date(profile.passwordExpiresAt).toLocaleString()
+    : "No expiry set";
+  const countdownColor = passwordExpired
+    ? theme.error
+    : Number.isFinite(daysRemaining)
+      ? daysRemaining <= 9
+        ? theme.error
+        : daysRemaining <= 19
+          ? theme.warning || "#f59e0b"
+          : theme.success || "#10b981"
+      : theme.textSecondary;
 
   return (
     <ScreenLayout>
@@ -241,6 +281,107 @@ export default function PrivacySettingsScreen() {
           onPress={() => saveMutation.mutate(settings)}
           loading={saveMutation.isLoading}
         />
+
+        <View
+          style={{
+            marginTop: 12,
+            backgroundColor: theme.card,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: theme.border,
+            padding: 14,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 13,
+              fontFamily: "Inter_600SemiBold",
+              color: theme.text,
+              marginBottom: 6,
+            }}
+          >
+            Password Update Interval
+          </Text>
+          <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 10 }}>
+            Choose how often your password should expire.
+          </Text>
+
+          <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+            {PASSWORD_INTERVAL_OPTIONS.map((option) => {
+              const active = Number(passwordIntervalDays) === Number(option.value);
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  onPress={() => setPasswordIntervalDays(option.value)}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 7,
+                    marginRight: 8,
+                    marginBottom: 8,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: active ? theme.primary : theme.border,
+                    backgroundColor: active ? `${theme.primary}20` : theme.surface,
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontFamily: "Inter_600SemiBold",
+                      color: active ? theme.primary : theme.textSecondary,
+                    }}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View
+            style={{
+              marginTop: 10,
+              padding: 10,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: theme.border,
+              backgroundColor: theme.surface,
+            }}
+          >
+            <Text style={{ fontSize: 12, color: countdownColor, fontFamily: "Inter_600SemiBold" }}>
+              {passwordExpired
+                ? "Password expired. Reset your password to continue."
+                : Number.isFinite(daysRemaining)
+                  ? `${daysRemaining} day(s) remaining`
+                  : "No active countdown"}
+            </Text>
+            <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 2 }}>
+              Expires at: {expiryText}
+            </Text>
+          </View>
+
+          <Button
+            title="Save Password Interval"
+            onPress={() => passwordPolicyMutation.mutate(Number(passwordIntervalDays || 0))}
+            loading={passwordPolicyMutation.isLoading}
+            style={{ marginTop: 10 }}
+          />
+          <TouchableOpacity
+            onPress={() => router.push("/(auth)/forgot-password")}
+            style={{ marginTop: 8, alignSelf: "flex-start" }}
+          >
+            <Text
+              style={{
+                fontSize: 12,
+                fontFamily: "Inter_600SemiBold",
+                color: theme.primary,
+              }}
+            >
+              Update password now
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         <View
           style={{

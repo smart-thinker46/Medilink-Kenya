@@ -42,3 +42,6 @@ app-example
 .metro-virtual/*
 metro-virtual/
 .expo/
+
+# Metro cache
+caches/.metro-cache/

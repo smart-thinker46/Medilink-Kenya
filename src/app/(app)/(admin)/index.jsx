@@ -14,6 +14,7 @@ import {
   Settings,
   Sparkles,
   Bell,
+  Mail,
   Video,
   Home,
   MessageCircle,
@@ -121,6 +122,7 @@ export default function AdminOverviewScreen() {
     { key: "audit", title: "Audit Logs", href: "/(app)/(admin)/audit-logs", icon: Settings },
     { key: "chat", title: "Chat", href: "/(app)/(shared)/conversations", icon: MessageCircle },
     { key: "notifications", title: "Notifications", href: "/(app)/(admin)/notifications", icon: Bell },
+    { key: "email-center", title: "Email Center", href: "/(app)/(admin)/email-center", icon: Mail },
     { key: "video", title: "Video Call", href: "/(app)/(admin)/video-call", icon: Video },
     { key: "settings", title: "Settings", href: "/(app)/(admin)/settings", icon: Settings },
   ];

@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { ArrowLeft, MapPin, Phone, Pill, Paperclip } from "lucide-react-native";
+import { ArrowLeft, MapPin, Phone, Pill, Paperclip, ShieldCheck } from "lucide-react-native";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import * as DocumentPicker from "expo-document-picker";
 
@@ -46,11 +46,32 @@ export default function PatientDetailsScreen() {
   const [healthScore, setHealthScore] = useState("60");
   const [recoveryStatus, setRecoveryStatus] = useState("UNDER_TREATMENT");
   const [attachments, setAttachments] = useState([]);
+  const [accessRequestNote, setAccessRequestNote] = useState("");
 
   const healthStatusQuery = useQuery({
     queryKey: ["medic-patient-health-status", patientId],
     queryFn: () => apiClient.getPatientHealthStatus(patientId),
     enabled: Boolean(patientId),
+  });
+  const accessStatusQuery = useQuery({
+    queryKey: ["medical-record-access-status", patientId, medicId],
+    queryFn: () => apiClient.getMedicalRecordAccessStatus(patientId),
+    enabled: Boolean(patientId && medicId),
+  });
+  const requestAccessMutation = useMutation({
+    mutationFn: (payload) => apiClient.requestMedicalRecordAccess(payload),
+    onSuccess: (response) => {
+      const status = String(response?.status || "").toUpperCase();
+      if (status === "GRANTED") {
+        showToast("You already have record access for this patient.", "success");
+      } else {
+        showToast("Access request sent to patient.", "success");
+      }
+      accessStatusQuery.refetch();
+    },
+    onError: (error) => {
+      showToast(error.message || "Failed to request access.", "error");
+    },
   });
 
   useEffect(() => {
@@ -65,6 +86,19 @@ export default function PatientDetailsScreen() {
     setRecoveryStatus(normalizedStatus);
     setHealthScore(String(Math.max(0, Math.min(100, normalizedScore))));
   }, [healthStatusQuery.data]);
+
+  const hasRecordAccess = isSuperAdmin || Boolean(accessStatusQuery.data?.granted);
+  const isAccessPending = !hasRecordAccess && Boolean(accessStatusQuery.data?.pending);
+  const patientRecordsQuery = useQuery({
+    queryKey: ["medic-patient-records", patientId, medicId],
+    queryFn: () => apiClient.getMedicalRecords(patientId),
+    enabled: Boolean(patientId && hasRecordAccess),
+  });
+  const patientTimelineRecords = useMemo(() => {
+    if (Array.isArray(patientRecordsQuery.data)) return patientRecordsQuery.data;
+    if (Array.isArray(patientRecordsQuery.data?.items)) return patientRecordsQuery.data.items;
+    return [];
+  }, [patientRecordsQuery.data]);
 
   const conditionMutation = useMutation({
     mutationFn: (payload) => apiClient.createConditionUpdate(payload),
@@ -123,6 +157,10 @@ export default function PatientDetailsScreen() {
   });
 
   const handleUpdate = () => {
+    if (!hasRecordAccess) {
+      showToast("Patient consent is required before updating records.", "warning");
+      return;
+    }
     if (!patientId || !medicId || !condition.trim()) {
       showToast("Please enter a condition update.", "warning");
       return;
@@ -139,6 +177,10 @@ export default function PatientDetailsScreen() {
   };
 
   const handlePrescription = () => {
+    if (!hasRecordAccess) {
+      showToast("Patient consent is required before prescribing.", "warning");
+      return;
+    }
     if (!patientId || !medicId || !prescription.trim()) {
       showToast("Please enter a prescription.", "warning");
       return;
@@ -158,6 +200,10 @@ export default function PatientDetailsScreen() {
     });
   };
   const handleSaveClinicalUpdate = () => {
+    if (!hasRecordAccess) {
+      showToast("Patient consent is required before saving clinical records.", "warning");
+      return;
+    }
     if (!patientId || !medicId) {
       showToast("Missing patient or medic details.", "warning");
       return;
@@ -193,6 +239,10 @@ export default function PatientDetailsScreen() {
   };
 
   const handleSaveHealthStatus = () => {
+    if (!hasRecordAccess) {
+      showToast("Patient consent is required before updating health status.", "warning");
+      return;
+    }
     if (!patientId) {
       showToast("Missing patient details.", "warning");
       return;
@@ -214,6 +264,10 @@ export default function PatientDetailsScreen() {
   };
 
   const handleAddAttachment = async () => {
+    if (!hasRecordAccess) {
+      showToast("Patient consent is required before uploading attachments.", "warning");
+      return;
+    }
     const result = await DocumentPicker.getDocumentAsync({
       multiple: true,
       type: "*/*",
@@ -242,6 +296,17 @@ export default function PatientDetailsScreen() {
     } catch (error) {
       showToast(error.message || "Attachment upload failed.", "error");
     }
+  };
+
+  const handleRequestAccess = () => {
+    if (!patientId) {
+      showToast("Missing patient details.", "warning");
+      return;
+    }
+    requestAccessMutation.mutate({
+      patient_id: patientId,
+      note: accessRequestNote.trim() || undefined,
+    });
   };
 
   return (
@@ -298,6 +363,128 @@ export default function PatientDetailsScreen() {
             onSelect={setSelectedMedicUserId}
             loading={isLoadingScope}
           />
+          {!hasRecordAccess && (
+            <View
+              style={{
+                backgroundColor: theme.card,
+                borderRadius: 16,
+                padding: 16,
+                marginBottom: 16,
+                borderWidth: 1,
+                borderColor: theme.warning,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+                <ShieldCheck color={theme.warning} size={16} />
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontFamily: "Inter_700Bold",
+                    color: theme.text,
+                    marginLeft: 8,
+                  }}
+                >
+                  Record Access Needed
+                </Text>
+              </View>
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontFamily: "Inter_400Regular",
+                  color: theme.textSecondary,
+                  marginBottom: 10,
+                }}
+              >
+                Patient must approve your request before you can view or update medical records.
+              </Text>
+              <Input
+                label="Request note (optional)"
+                value={accessRequestNote}
+                onChangeText={setAccessRequestNote}
+                placeholder="e.g. Follow-up review for current treatment plan."
+              />
+              <Button
+                title={isAccessPending ? "Request Pending" : "Request Record Access"}
+                onPress={handleRequestAccess}
+                loading={requestAccessMutation.isLoading || accessStatusQuery.isLoading}
+                disabled={isAccessPending}
+              />
+            </View>
+          )}
+          {hasRecordAccess && (
+            <View
+              style={{
+                backgroundColor: `${theme.success}18`,
+                borderWidth: 1,
+                borderColor: theme.success,
+                borderRadius: 12,
+                padding: 10,
+                marginBottom: 16,
+              }}
+            >
+              <Text style={{ fontSize: 12, color: theme.success, fontFamily: "Inter_600SemiBold" }}>
+                Access approved by patient. You have full record access.
+              </Text>
+            </View>
+          )}
+          {hasRecordAccess && (
+            <View
+              style={{
+                backgroundColor: theme.card,
+                borderRadius: 16,
+                padding: 16,
+                marginBottom: 16,
+                borderWidth: 1,
+                borderColor: theme.border,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 16,
+                  fontFamily: "Inter_600SemiBold",
+                  color: theme.text,
+                  marginBottom: 8,
+                }}
+              >
+                Patient Record Timeline
+              </Text>
+              {patientRecordsQuery.isLoading ? (
+                <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                  Loading records...
+                </Text>
+              ) : patientTimelineRecords.length === 0 ? (
+                <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                  No medical records found for this patient yet.
+                </Text>
+              ) : (
+                patientTimelineRecords.slice(0, 8).map((record) => (
+                  <View
+                    key={record.id}
+                    style={{
+                      borderWidth: 1,
+                      borderColor: theme.border,
+                      borderRadius: 10,
+                      backgroundColor: theme.surface,
+                      padding: 10,
+                      marginTop: 8,
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: theme.text }}>
+                      {String(record.type || "note").replace("_", " ").toUpperCase()}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 2 }}>
+                      {record.createdAt
+                        ? new Date(record.createdAt).toLocaleString()
+                        : "Unknown date"}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 4 }}>
+                      {record.notes || record.condition || "No details"}
+                    </Text>
+                  </View>
+                ))
+              )}
+            </View>
+          )}
           <View
             style={{
               backgroundColor: theme.card,
@@ -464,6 +651,7 @@ export default function PatientDetailsScreen() {
               title="Save Health Status"
               onPress={handleSaveHealthStatus}
               loading={healthStatusMutation.isLoading || healthStatusQuery.isLoading}
+              disabled={!hasRecordAccess}
             />
           </View>
 
@@ -479,6 +667,7 @@ export default function PatientDetailsScreen() {
             variant="outline"
             leftIcon={Paperclip}
             style={{ marginBottom: 12 }}
+            disabled={!hasRecordAccess}
           />
           {attachments.length > 0 && (
             <View
@@ -518,6 +707,7 @@ export default function PatientDetailsScreen() {
             title="Update Condition"
             onPress={handleUpdate}
             loading={conditionMutation.isLoading}
+            disabled={!hasRecordAccess}
           />
 
           <View style={{ height: 16 }} />
@@ -534,6 +724,7 @@ export default function PatientDetailsScreen() {
             title="Send Prescription"
             onPress={handlePrescription}
             loading={prescriptionMutation.isLoading}
+            disabled={!hasRecordAccess}
           />
 
           <View style={{ height: 20 }} />
@@ -590,6 +781,7 @@ export default function PatientDetailsScreen() {
             title="Save Clinical Record"
             onPress={handleSaveClinicalUpdate}
             loading={clinicalUpdateMutation.isLoading}
+            disabled={!hasRecordAccess}
           />
         </ScrollView>
       </View>

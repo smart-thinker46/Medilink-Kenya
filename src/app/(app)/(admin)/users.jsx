@@ -76,6 +76,14 @@ export default function AdminUsersScreen() {
     password: "",
     status: "active",
   });
+  const [emailComposer, setEmailComposer] = useState({
+    to: "",
+    subject: "",
+    message: "",
+    userName: "",
+    userId: "",
+    visible: false,
+  });
 
   React.useEffect(() => {
     setPage(1);
@@ -166,6 +174,10 @@ export default function AdminUsersScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     },
+  });
+
+  const sendEmailMutation = useMutation({
+    mutationFn: (payload) => apiClient.adminSendEmail(payload),
   });
 
   const handleVerify = async (userId, verified) => {
@@ -335,6 +347,63 @@ export default function AdminUsersScreen() {
       });
     } catch (error) {
       showToast(error.message || "Failed to start call.", "error");
+    }
+  };
+
+  const openEmailComposer = (user) => {
+    if (!user?.email) {
+      showToast("This user has no email address.", "warning");
+      return;
+    }
+    const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+    setEmailComposer({
+      to: user.email,
+      subject: "MediLink Support Update",
+      message: `Hello ${fullName || "there"},\n\n`,
+      userName: fullName || user.email,
+      userId: user.id,
+      visible: true,
+    });
+  };
+
+  const closeEmailComposer = () => {
+    setEmailComposer({
+      to: "",
+      subject: "",
+      message: "",
+      userName: "",
+      userId: "",
+      visible: false,
+    });
+  };
+
+  const handleSendEmail = async () => {
+    if (!emailComposer.to.trim()) {
+      showToast("Recipient email is required.", "warning");
+      return;
+    }
+    if (!emailComposer.subject.trim()) {
+      showToast("Email subject is required.", "warning");
+      return;
+    }
+    if (!emailComposer.message.trim()) {
+      showToast("Email message is required.", "warning");
+      return;
+    }
+
+    try {
+      const result = await sendEmailMutation.mutateAsync({
+        to: emailComposer.to.trim(),
+        subject: emailComposer.subject.trim(),
+        text: emailComposer.message.trim(),
+      });
+      if (result?.success === false) {
+        throw new Error(result?.message || "Not authorized to send email.");
+      }
+      showToast("Email sent successfully.", "success");
+      closeEmailComposer();
+    } catch (error) {
+      showToast(error?.message || "Failed to send email.", "error");
     }
   };
 
@@ -967,6 +1036,125 @@ export default function AdminUsersScreen() {
           </View>
         )}
 
+        {emailComposer.visible && (
+          <View
+            style={{
+              backgroundColor: theme.card,
+              borderRadius: 14,
+              borderWidth: 1,
+              borderColor: theme.border,
+              padding: 12,
+              marginBottom: 14,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 13,
+                fontFamily: "Inter_600SemiBold",
+                color: theme.text,
+                marginBottom: 8,
+              }}
+            >
+              Email {emailComposer.userName || "User"}
+            </Text>
+            <TextInput
+              placeholder="Recipient"
+              placeholderTextColor={theme.textSecondary}
+              value={emailComposer.to}
+              onChangeText={(value) =>
+                setEmailComposer((prev) => ({ ...prev, to: value }))
+              }
+              keyboardType="email-address"
+              autoCapitalize="none"
+              style={{
+                height: 40,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: theme.surface,
+                paddingHorizontal: 10,
+                color: theme.text,
+                marginBottom: 8,
+              }}
+            />
+            <TextInput
+              placeholder="Subject"
+              placeholderTextColor={theme.textSecondary}
+              value={emailComposer.subject}
+              onChangeText={(value) =>
+                setEmailComposer((prev) => ({ ...prev, subject: value }))
+              }
+              style={{
+                height: 40,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: theme.surface,
+                paddingHorizontal: 10,
+                color: theme.text,
+                marginBottom: 8,
+              }}
+            />
+            <TextInput
+              placeholder="Message"
+              placeholderTextColor={theme.textSecondary}
+              value={emailComposer.message}
+              onChangeText={(value) =>
+                setEmailComposer((prev) => ({ ...prev, message: value }))
+              }
+              multiline
+              numberOfLines={5}
+              style={{
+                minHeight: 110,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: theme.surface,
+                paddingHorizontal: 10,
+                paddingTop: 10,
+                color: theme.text,
+                textAlignVertical: "top",
+                marginBottom: 10,
+              }}
+            />
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  backgroundColor: theme.primary,
+                  borderRadius: 10,
+                  alignItems: "center",
+                  paddingVertical: 10,
+                  opacity: sendEmailMutation.isPending ? 0.7 : 1,
+                }}
+                onPress={handleSendEmail}
+                disabled={sendEmailMutation.isPending}
+              >
+                <Text style={{ color: "#fff", fontSize: 12, fontFamily: "Inter_600SemiBold" }}>
+                  {sendEmailMutation.isPending ? "Sending..." : "Send Email"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  backgroundColor: theme.surface,
+                  borderRadius: 10,
+                  alignItems: "center",
+                  paddingVertical: 10,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                }}
+                onPress={closeEmailComposer}
+                disabled={sendEmailMutation.isPending}
+              >
+                <Text style={{ color: theme.text, fontSize: 12, fontFamily: "Inter_600SemiBold" }}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         <View
           style={{
             backgroundColor: theme.card,
@@ -1053,7 +1241,7 @@ export default function AdminUsersScreen() {
                   <TouchableOpacity onPress={() => handleStartCall(user)}>
                     <Video color={theme.iconColor} size={16} />
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => showToast(`Email ${user.email}`, "info")}>
+                  <TouchableOpacity onPress={() => openEmailComposer(user)}>
                     <Mail color={theme.iconColor} size={16} />
                   </TouchableOpacity>
                 </View>

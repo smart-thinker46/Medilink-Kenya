@@ -271,6 +271,19 @@ class ApiClient {
     return this.client.put("/users/profile", data);
   }
 
+  async updatePasswordPolicy(passwordUpdateIntervalDays) {
+    return this.client.put("/users/security/password-policy", {
+      passwordUpdateIntervalDays,
+    });
+  }
+
+  async changePassword(currentPassword, newPassword) {
+    return this.client.put("/users/security/password", {
+      currentPassword,
+      newPassword,
+    });
+  }
+
   async getMyLocation() {
     return this.client.get("/users/location");
   }
@@ -399,6 +412,26 @@ class ApiClient {
 
   async createClinicalUpdate(data) {
     return this.client.post("/medical-records/clinical-update", data);
+  }
+
+  async requestMedicalRecordAccess(data) {
+    return this.client.post("/medical-records/access/request", data);
+  }
+
+  async getMedicalRecordAccessRequests(params = {}) {
+    return this.client.get("/medical-records/access/requests", { params });
+  }
+
+  async respondMedicalRecordAccessRequest(requestId, accept) {
+    return this.client.post(`/medical-records/access/requests/${requestId}/respond`, {
+      accept,
+    });
+  }
+
+  async getMedicalRecordAccessStatus(patientId) {
+    return this.client.get("/medical-records/access/status", {
+      params: { patient_id: patientId },
+    });
   }
 
   // Shifts
@@ -650,6 +683,10 @@ class ApiClient {
 
   async adminSendNotification(payload) {
     return this.client.put("/admin/notifications", payload);
+  }
+
+  async adminSendEmail(payload) {
+    return this.client.post("/emails/send", payload);
   }
 
   async adminGetNotifications() {

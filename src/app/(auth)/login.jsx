@@ -75,7 +75,19 @@ export default function LoginScreen() {
       }
     },
     onError: (error) => {
-      Alert.alert(t("login_failed"), error.message || "Please try again");
+      const message = String(error?.message || "Please try again");
+      if (message.toLowerCase().includes("password expired")) {
+        Alert.alert(
+          "Password expired",
+          "Your password has expired. Reset it now to continue using the app.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Reset Password", onPress: () => router.push("/(auth)/forgot-password") },
+          ],
+        );
+        return;
+      }
+      Alert.alert(t("login_failed"), message);
     },
   });
 
