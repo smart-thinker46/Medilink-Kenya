@@ -28,7 +28,7 @@
         <key>CFBundleURLSchemes</key>
         <array>
           <string>medilink</string>
-          <string>xyz.create.CreateExpoEnvironment</string>
+          <string>com.medilink.kenya</string>
         </array>
       </dict>
       <dict>

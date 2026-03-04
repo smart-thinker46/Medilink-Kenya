@@ -17,7 +17,7 @@
         "NSPhotoLibraryUsageDescription": "Allow Medilink to access your photos for profile and ID uploads.",
         "NSLocationWhenInUseUsageDescription": "Allow Medilink to access your location to set and share your approximate position."
       },
-      "bundleIdentifier": "xyz.create.CreateExpoEnvironment"
+      "bundleIdentifier": "com.medilink.kenya"
     },
     "android": {
       "adaptiveIcon": {
@@ -31,7 +31,7 @@
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
       ],
-      "package": "xyz.create.CreateExpoEnvironment",
+      "package": "com.medilink.kenya",
       "usesCleartextTraffic": true
     },
     "plugins": [
@@ -72,7 +72,7 @@
             }
           },
           "ios": {
-            "appGroupIdentifier": "group.xyz.create.CreateExpoEnvironment"
+            "appGroupIdentifier": "group.com.medilink.kenya"
           }
         }
       ],

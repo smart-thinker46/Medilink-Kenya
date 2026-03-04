@@ -1,4 +1,4 @@
-package xyz.create.CreateExpoEnvironment
+package com.medilink.kenya
 
 import android.app.Application
 import android.content.res.Configuration

@@ -92,9 +92,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'xyz.create.CreateExpoEnvironment'
+    namespace 'com.medilink.kenya'
     defaultConfig {
-        applicationId 'xyz.create.CreateExpoEnvironment'
+        applicationId 'com.medilink.kenya'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
