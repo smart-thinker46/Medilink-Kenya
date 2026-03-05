@@ -1,18 +1,11 @@
 import { useAuth } from "@/utils/auth/useAuth";
 import { Stack } from "expo-router";
-import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, LogBox, View } from "react-native";
+import { LogBox } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ThemeProvider from "@/components/ThemeProvider";
-import { useAppFonts } from "@/utils/useFontLoader";
 import ToastProvider from "@/components/ToastProvider";
-
-SplashScreen.preventAutoHideAsync().catch(() => undefined);
-setTimeout(() => {
-  SplashScreen.hideAsync().catch(() => undefined);
-}, 4500);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,11 +19,8 @@ const queryClient = new QueryClient({
 });
 
 export default function RootLayout() {
-  const { initiate, isReady, auth } = useAuth();
-  const fontsLoaded = useAppFonts();
-  const [forceReady, setForceReady] = useState(false);
+  const { initiate, auth } = useAuth();
   const [pushApi, setPushApi] = useState(null);
-  const hideNativeSplash = () => SplashScreen.hideAsync().catch(() => undefined);
 
   useEffect(() => {
     LogBox.ignoreLogs([
@@ -42,8 +32,7 @@ export default function RootLayout() {
     try {
       initiate();
     } catch {
-      setForceReady(true);
-      hideNativeSplash();
+      // Allow UI to continue even when auth hydration fails.
     }
   }, [initiate]);
 
@@ -73,46 +62,6 @@ export default function RootLayout() {
       pushApi?.registerDeviceToken?.().catch(() => undefined);
     }
   }, [auth?.token, pushApi]);
-
-  useEffect(() => {
-    if (isReady && fontsLoaded) {
-      hideNativeSplash();
-    }
-  }, [isReady, fontsLoaded]);
-
-  useEffect(() => {
-    // Emergency fallback: never keep native splash forever.
-    const timer = setTimeout(() => {
-      setForceReady(true);
-      hideNativeSplash();
-    }, 4000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!isReady || !fontsLoaded) {
-        setForceReady(true);
-        hideNativeSplash();
-      }
-    }, 8000);
-    return () => clearTimeout(timer);
-  }, [isReady, fontsLoaded]);
-
-  if ((!isReady || !fontsLoaded) && !forceReady) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: "#FFFFFF",
-        }}
-      >
-        <ActivityIndicator size="small" color="#1B8F3A" />
-      </View>
-    );
-  }
 
   return (
     <QueryClientProvider client={queryClient}>
