@@ -45,3 +45,4 @@ metro-virtual/
 
 # Metro cache
 caches/.metro-cache/
+.vercel
