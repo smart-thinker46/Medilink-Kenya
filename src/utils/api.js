@@ -55,7 +55,10 @@ class ApiClient {
     this.lastNetworkErrorAt = 0;
     this.hasWarnedBaseUrl = false;
     this.baseUrls = API_BASE_URLS.length ? API_BASE_URLS : [""];
-    this.buildApiBase = (base) => (base ? `${base}/api` : "/api");
+    this.buildApiBase = (base) => {
+      if (!base) return "/api";
+      return /\/api$/i.test(base) ? base : `${base}/api`;
+    };
     this.client = axios.create({
       baseURL: this.buildApiBase(this.baseUrls[0]),
       headers: {
