@@ -63,7 +63,7 @@
     ],
     "web": {
       "bundler": "metro",
-      "favicon": "./assets/images/Micon.png"
+      "favicon": "./assets/images/icon-square.png"
     },
     "experiments": {
       "typedRoutes": true
