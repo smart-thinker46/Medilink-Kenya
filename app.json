@@ -57,24 +57,7 @@
           }
         }
       ],
-      [
-        "@stream-io/video-react-native-sdk",
-        {
-          "ringing": {
-            "incomingCall": {
-              "title": "Incoming Call",
-              "text": "Tap to answer on Medilink"
-            },
-            "missedCall": {
-              "title": "Missed Call",
-              "text": "Tap to call back on Medilink"
-            }
-          },
-          "ios": {
-            "appGroupIdentifier": "group.com.medilink.kenya"
-          }
-        }
-      ],
+      "@stream-io/video-react-native-sdk",
       "expo-video",
       "expo-asset"
     ],
