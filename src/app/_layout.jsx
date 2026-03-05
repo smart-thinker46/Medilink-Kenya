@@ -2,7 +2,7 @@ import { useAuth } from "@/utils/auth/useAuth";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useState } from "react";
-import { LogBox } from "react-native";
+import { ActivityIndicator, LogBox, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ThemeProvider from "@/components/ThemeProvider";
@@ -16,7 +16,7 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 1000 * 60 * 5, // 5 minutes
-      cacheTime: 1000 * 60 * 30, // 30 minutes
+      gcTime: 1000 * 60 * 30, // 30 minutes
       retry: 1,
       refetchOnWindowFocus: false,
     },
@@ -27,6 +27,7 @@ export default function RootLayout() {
   const { initiate, isReady, auth } = useAuth();
   const fontsLoaded = useAppFonts();
   const [forceReady, setForceReady] = useState(false);
+  const hideNativeSplash = () => SplashScreen.hideAsync().catch(() => undefined);
 
   useEffect(() => {
     LogBox.ignoreLogs([
@@ -35,11 +36,21 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    initiate();
+    try {
+      initiate();
+    } catch {
+      setForceReady(true);
+      hideNativeSplash();
+    }
   }, [initiate]);
 
   useEffect(() => {
-    const unsubscribe = setupPushHandlers();
+    let unsubscribe;
+    try {
+      unsubscribe = setupPushHandlers();
+    } catch {
+      unsubscribe = undefined;
+    }
     return () => {
       if (typeof unsubscribe === "function") {
         unsubscribe();
@@ -55,22 +66,42 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (isReady && fontsLoaded) {
-      SplashScreen.hideAsync();
+      hideNativeSplash();
     }
   }, [isReady, fontsLoaded]);
+
+  useEffect(() => {
+    // Emergency fallback: never keep native splash forever.
+    const timer = setTimeout(() => {
+      setForceReady(true);
+      hideNativeSplash();
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       if (!isReady || !fontsLoaded) {
         setForceReady(true);
-        SplashScreen.hideAsync().catch(() => undefined);
+        hideNativeSplash();
       }
     }, 8000);
     return () => clearTimeout(timer);
   }, [isReady, fontsLoaded]);
 
   if ((!isReady || !fontsLoaded) && !forceReady) {
-    return null;
+    return (
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "#FFFFFF",
+        }}
+      >
+        <ActivityIndicator size="small" color="#1B8F3A" />
+      </View>
+    );
   }
 
   return (
