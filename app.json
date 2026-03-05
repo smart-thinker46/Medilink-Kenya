@@ -4,7 +4,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "runtimeVersion": "1.0.0",
-    "icon": "./assets/images/icon-square.png",
+    "icon": "./assets/images/icon.png",
     "scheme": "medilink",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -43,7 +43,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/Medilink-logo.png",
+          "image": "./assets/images/icon.png",
           "imageWidth": 200,
           "resizeMode": "contain"
         }
@@ -63,7 +63,7 @@
     ],
     "web": {
       "bundler": "metro",
-      "favicon": "./assets/images/icon-square.png"
+      "favicon": "./assets/images/icon.png"
     },
     "experiments": {
       "typedRoutes": true
