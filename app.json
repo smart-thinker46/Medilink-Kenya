@@ -29,7 +29,11 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.WAKE_LOCK"
       ],
       "package": "com.medilink.kenya"
     },
@@ -74,8 +78,10 @@
         "sitemap": false
       },
       "eas": {
-        "projectId": "3f30a311-57bb-4008-8018-6a33ccca80c3"
+        "projectId": "64a4094b-019f-4769-b7f4-9a716c086280"
       }
-    }
+    },
+    "owner": "medilink-kenya",
+    "slug": "medilink-ke"
   }
 }
