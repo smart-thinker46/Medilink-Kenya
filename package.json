@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "postinstall": "patch-package",
+    "postinstall": "if [ -d patches ] && [ \"$(ls -A patches 2>/dev/null)\" ]; then npx patch-package; else echo \"No patches to apply\"; fi",
     "android": "expo run:android",
     "ios": "expo run:ios"
   },

@@ -12,7 +12,6 @@
 			"distribution": "internal",
 			"node": "20.19.4",
 			"env": {
-				"NODE_ENV": "production",
 				"EXPO_NEW_ARCH_ENABLED": "1"
 			} 
 		},
