@@ -1,0 +1,16 @@
+# dependencies
+node_modules
+
+# local builds
+dist
+.expo
+caches
+metro-virtual
+
+# native folders (not needed for web export on Vercel)
+android
+ios
+
+# local env / machine files
+.env.local
+.DS_Store
