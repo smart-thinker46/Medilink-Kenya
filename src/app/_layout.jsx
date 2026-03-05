@@ -8,9 +8,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ThemeProvider from "@/components/ThemeProvider";
 import { useAppFonts } from "@/utils/useFontLoader";
 import ToastProvider from "@/components/ToastProvider";
-import { registerDeviceToken, setupPushHandlers } from "@/utils/pushNotifications";
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
+setTimeout(() => {
+  SplashScreen.hideAsync().catch(() => undefined);
+}, 4500);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,6 +29,7 @@ export default function RootLayout() {
   const { initiate, isReady, auth } = useAuth();
   const fontsLoaded = useAppFonts();
   const [forceReady, setForceReady] = useState(false);
+  const [pushApi, setPushApi] = useState(null);
   const hideNativeSplash = () => SplashScreen.hideAsync().catch(() => undefined);
 
   useEffect(() => {
@@ -46,12 +49,19 @@ export default function RootLayout() {
 
   useEffect(() => {
     let unsubscribe;
-    try {
-      unsubscribe = setupPushHandlers();
-    } catch {
-      unsubscribe = undefined;
-    }
+    let mounted = true;
+    (async () => {
+      try {
+        const mod = await import("../utils/pushNotifications");
+        if (!mounted) return;
+        setPushApi(mod);
+        unsubscribe = mod?.setupPushHandlers?.();
+      } catch {
+        unsubscribe = undefined;
+      }
+    })();
     return () => {
+      mounted = false;
       if (typeof unsubscribe === "function") {
         unsubscribe();
       }
@@ -60,9 +70,9 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (auth?.token) {
-      registerDeviceToken().catch(() => undefined);
+      pushApi?.registerDeviceToken?.().catch(() => undefined);
     }
-  }, [auth?.token]);
+  }, [auth?.token, pushApi]);
 
   useEffect(() => {
     if (isReady && fontsLoaded) {
