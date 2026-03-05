@@ -1,11 +1,15 @@
 import { useAuth } from "@/utils/auth/useAuth";
 import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useState } from "react";
 import { LogBox } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ThemeProvider from "@/components/ThemeProvider";
 import ToastProvider from "@/components/ToastProvider";
+import { useAppFonts } from "@/utils/useFontLoader";
+
+SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,8 +23,12 @@ const queryClient = new QueryClient({
 });
 
 export default function RootLayout() {
-  const { initiate, auth } = useAuth();
+  const { initiate, isReady, auth } = useAuth();
+  const fontsLoaded = useAppFonts();
   const [pushApi, setPushApi] = useState(null);
+  const [bootTimeoutReached, setBootTimeoutReached] = useState(false);
+
+  const appReady = (isReady && fontsLoaded) || bootTimeoutReached;
 
   useEffect(() => {
     LogBox.ignoreLogs([
@@ -32,9 +40,22 @@ export default function RootLayout() {
     try {
       initiate();
     } catch {
-      // Allow UI to continue even when auth hydration fails.
+      setBootTimeoutReached(true);
     }
   }, [initiate]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setBootTimeoutReached(true);
+    }, 7000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (appReady) {
+      SplashScreen.hideAsync().catch(() => undefined);
+    }
+  }, [appReady]);
 
   useEffect(() => {
     let unsubscribe;
@@ -62,6 +83,10 @@ export default function RootLayout() {
       pushApi?.registerDeviceToken?.().catch(() => undefined);
     }
   }, [auth?.token, pushApi]);
+
+  if (!appReady) {
+    return null;
+  }
 
   return (
     <QueryClientProvider client={queryClient}>

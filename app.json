@@ -44,6 +44,15 @@
           "sitemap": false
         }
       ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/Medilink-logo.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ],
       "expo-audio",
       [
         "expo-build-properties",

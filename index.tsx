@@ -5,12 +5,14 @@ import { type ReactNode } from 'react';
 import { AppRegistry } from 'react-native';
 import { DeviceErrorBoundaryWrapper } from './__create/DeviceErrorBoundary';
 
-function WrapperComponentProvider({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  return <DeviceErrorBoundaryWrapper>{children}</DeviceErrorBoundaryWrapper>;
-}
+if (__DEV__) {
+  function WrapperComponentProvider({
+    children,
+  }: {
+    children: ReactNode;
+  }) {
+    return <DeviceErrorBoundaryWrapper>{children}</DeviceErrorBoundaryWrapper>;
+  }
 
-AppRegistry.setWrapperComponentProvider(() => WrapperComponentProvider);
+  AppRegistry.setWrapperComponentProvider(() => WrapperComponentProvider);
+}
