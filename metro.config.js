@@ -2,6 +2,7 @@ const { getDefaultConfig } = require('expo/metro-config');
 const path = require('node:path');
 const fs = require('node:fs');
 const { FileStore } = require('metro-cache');
+const bufferEntry = require.resolve('buffer/');
 
 const { reportErrorToRemote } = require('./__create/report-error-to-remote');
 const {
@@ -55,8 +56,8 @@ const WEB_ALIASES = {
 
 const SHARED_ALIASES = {
   'expo-image': path.resolve(__dirname, './polyfills/shared/expo-image.tsx'),
-  buffer: path.resolve(__dirname, './polyfills/shared/buffer.ts'),
-  'buffer/': path.resolve(__dirname, './polyfills/shared/buffer.ts'),
+  buffer: bufferEntry,
+  'buffer/': bufferEntry,
 };
 
 const NATIVE_ALIASES = {
@@ -91,6 +92,17 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
       moduleName = 'event-target-shim';
     }
 
+    // Shared aliases must run before the polyfill-origin bypass below.
+    // Otherwise imports inside polyfill files (for example "buffer")
+    // can be resolved as Node core modules instead of npm packages.
+    if (SHARED_ALIASES[moduleName]) {
+      return context.resolveRequest(
+        context,
+        SHARED_ALIASES[moduleName],
+        platform
+      );
+    }
+
     // Allow Metro to resolve polyfill internals normally
     if (
       context.originModulePath.startsWith(`${__dirname}/polyfills/native`) ||
@@ -108,15 +120,6 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
       return context.resolveRequest(
         context,
         '@expo-google-fonts/dev',
-        platform
-      );
-    }
-
-    // Shared aliases
-    if (SHARED_ALIASES[moduleName]) {
-      return context.resolveRequest(
-        context,
-        SHARED_ALIASES[moduleName],
         platform
       );
     }
