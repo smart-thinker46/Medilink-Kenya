@@ -241,8 +241,13 @@ class ApiClient {
   }
 
   // Auth endpoints
-  async login(email, password) {
-    return this.client.post("/auth/login", { email, password });
+  async login(email, password, otp, challengeId) {
+    return this.client.post("/auth/login", {
+      email,
+      password,
+      otp: otp || undefined,
+      challengeId: challengeId || undefined,
+    });
   }
 
   async signup(userData) {

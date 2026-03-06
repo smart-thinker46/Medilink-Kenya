@@ -39,14 +39,27 @@ export default function LoginScreen() {
   const [formData, setFormData] = useState({
     email: "",
     password: "",
+    otp: "",
   });
+  const [otpChallengeId, setOtpChallengeId] = useState("");
+  const [otpDestination, setOtpDestination] = useState("");
 
   const [errors, setErrors] = useState({});
 
   const loginMutation = useMutation({
-    mutationFn: ({ email, password }) =>
-      apiClient.login(email.trim().toLowerCase(), password),
+    mutationFn: ({ email, password, otp, challengeId }) =>
+      apiClient.login(email.trim().toLowerCase(), password, otp, challengeId),
     onSuccess: (data) => {
+      if (data?.requiresOtp) {
+        setOtpChallengeId(String(data?.challengeId || ""));
+        setOtpDestination(String(data?.destination || ""));
+        Alert.alert(
+          "OTP sent",
+          `We've sent a verification code to ${data?.destination || "your email"}.`,
+        );
+        return;
+      }
+
       setAuth({
         token: data?.accessToken,
         user: data?.user,
@@ -104,17 +117,43 @@ export default function LoginScreen() {
       newErrors.password = "Password is required";
     }
 
+    if (otpChallengeId && !String(formData.otp || "").trim()) {
+      newErrors.otp = "OTP code is required";
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleLogin = () => {
     if (validateForm()) {
-      loginMutation.mutate(formData);
+      loginMutation.mutate({
+        email: formData.email,
+        password: formData.password,
+        otp: otpChallengeId ? String(formData.otp || "").trim() : undefined,
+        challengeId: otpChallengeId || undefined,
+      });
     }
   };
 
+  const handleResendOtp = () => {
+    if (!formData.email.trim() || !formData.password) {
+      Alert.alert("Missing details", "Enter email and password first.");
+      return;
+    }
+    setFormData((prev) => ({ ...prev, otp: "" }));
+    loginMutation.mutate({
+      email: formData.email,
+      password: formData.password,
+    });
+  };
+
   const handleInputChange = (field, value) => {
+    if ((field === "email" || field === "password") && otpChallengeId) {
+      setOtpChallengeId("");
+      setOtpDestination("");
+      setFormData((prev) => ({ ...prev, otp: "" }));
+    }
     setFormData((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors((prev) => ({ ...prev, [field]: null }));
@@ -230,7 +269,9 @@ export default function LoginScreen() {
                   lineHeight: 24,
                 }}
               >
-                {t("welcome_subtitle")}
+                {otpChallengeId
+                  ? `Enter the OTP sent to ${otpDestination || "your email"} to complete login.`
+                  : t("welcome_subtitle")}
               </Text>
             </MotiView>
 
@@ -265,27 +306,64 @@ export default function LoginScreen() {
                 required
               />
 
-              <TouchableOpacity
-                onPress={() => router.push("/(auth)/forgot-password")}
-                style={{
-                  alignSelf: "flex-end",
-                  marginBottom: 32,
-                  marginTop: -8,
-                }}
-              >
-                <Text
+              {otpChallengeId ? (
+                <Input
+                  label="One-Time Password (OTP)"
+                  placeholder="Enter 6-digit OTP"
+                  value={formData.otp}
+                  onChangeText={(value) =>
+                    handleInputChange("otp", value.replace(/[^\d]/g, "").slice(0, 8))
+                  }
+                  keyboardType="number-pad"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  error={errors.otp}
+                  required
+                />
+              ) : null}
+
+              {otpChallengeId ? (
+                <TouchableOpacity
+                  onPress={handleResendOtp}
                   style={{
-                    fontSize: 14,
-                    fontFamily: "Inter_500Medium",
-                    color: theme.primary,
+                    alignSelf: "flex-end",
+                    marginBottom: 32,
+                    marginTop: -8,
                   }}
                 >
-                  {t("forgot_password")}
-                </Text>
-              </TouchableOpacity>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontFamily: "Inter_500Medium",
+                      color: theme.primary,
+                    }}
+                  >
+                    Resend OTP
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => router.push("/(auth)/forgot-password")}
+                  style={{
+                    alignSelf: "flex-end",
+                    marginBottom: 32,
+                    marginTop: -8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontFamily: "Inter_500Medium",
+                      color: theme.primary,
+                    }}
+                  >
+                    {t("forgot_password")}
+                  </Text>
+                </TouchableOpacity>
+              )}
 
               <Button
-                title={t("sign_in")}
+                title={otpChallengeId ? "Verify OTP" : t("sign_in")}
                 onPress={handleLogin}
                 loading={loginMutation.isLoading}
                 style={{ marginBottom: 24 }}

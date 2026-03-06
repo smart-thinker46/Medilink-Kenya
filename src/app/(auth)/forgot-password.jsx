@@ -24,7 +24,7 @@ export default function ForgotPasswordScreen() {
     onSuccess: () => {
       Alert.alert(
         "Check your email",
-        "If this email exists, a reset link/token has been sent.",
+        "If this email exists, an OTP/reset token has been sent.",
         [
           { text: "Back to Login", onPress: () => router.replace("/(auth)/login") },
           { text: "Reset Now", onPress: () => router.push("/(auth)/reset-password") },
@@ -95,7 +95,7 @@ export default function ForgotPasswordScreen() {
           />
 
           <Button
-            title="Send Reset Link"
+            title="Send Reset OTP"
             onPress={onSubmit}
             loading={forgotMutation.isLoading}
             style={{ marginTop: 10 }}
@@ -111,4 +111,3 @@ export default function ForgotPasswordScreen() {
     </ScreenLayout>
   );
 }
-
