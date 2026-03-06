@@ -35,12 +35,15 @@ const resolveApiBaseUrls = () => {
   const fallbackList = rawFallbacks
     ? rawFallbacks.split(",").map((item) => normalizeBaseUrl(item))
     : [];
-  const expoHost = resolveExpoDevHost();
-  const autoFallbacks = [
-    expoHost ? normalizeBaseUrl(`http://${expoHost}:3000`) : "",
-    normalizeBaseUrl("http://10.0.2.2:3000"),
-    normalizeBaseUrl("http://localhost:3000"),
-  ];
+  const isDev = typeof __DEV__ !== "undefined" && __DEV__;
+  const expoHost = isDev ? resolveExpoDevHost() : "";
+  const autoFallbacks = isDev
+    ? [
+        expoHost ? normalizeBaseUrl(`http://${expoHost}:3000`) : "",
+        normalizeBaseUrl("http://10.0.2.2:3000"),
+        normalizeBaseUrl("http://localhost:3000"),
+      ]
+    : [];
   return Array.from(
     new Set([primary, ...fallbackList, ...autoFallbacks].filter(Boolean)),
   );
@@ -64,7 +67,8 @@ class ApiClient {
       headers: {
         "Content-Type": "application/json",
       },
-      timeout: 15000, // 15 seconds timeout
+      // Render cold starts can exceed 15s, especially on free tier.
+      timeout: 45000,
     });
 
     // Request Interceptor: Add Auth Token & Tenant ID
