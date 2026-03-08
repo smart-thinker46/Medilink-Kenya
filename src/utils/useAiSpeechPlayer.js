@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Audio } from "expo-av";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import * as Speech from "expo-speech";
 
 import apiClient from "@/utils/api";
@@ -11,6 +11,7 @@ const normalizeSpeechText = (value, maxChars = 1800) => {
   if (!text) return "";
   return text.slice(0, maxChars);
 };
+const BASE64_ENCODING = FileSystem?.EncodingType?.Base64 || "base64";
 
 export default function useAiSpeechPlayer({
   preferDeviceSpeech = true,
@@ -52,7 +53,18 @@ export default function useAiSpeechPlayer({
   }, [cleanupSound]);
 
   const ttsMutation = useMutation({
-    mutationFn: (text) => apiClient.aiVoiceTts({ text }),
+    mutationFn: (payload) => {
+      const isObjectPayload = payload && typeof payload === "object";
+      const text = normalizeSpeechText(isObjectPayload ? payload?.text : payload);
+      if (!text) {
+        throw new Error("Nothing to read aloud.");
+      }
+      const model = isObjectPayload ? String(payload?.model || "").trim() : "";
+      return apiClient.aiVoiceTts({
+        text,
+        model: model || undefined,
+      });
+    },
     onSuccess: async (data) => {
       await cleanupSound();
       const base64Audio = String(data?.audioBase64 || "").trim();
@@ -67,7 +79,7 @@ export default function useAiSpeechPlayer({
           return;
         }
         await FileSystem.writeAsStringAsync(tempFile, base64Audio, {
-          encoding: FileSystem.EncodingType.Base64,
+          encoding: BASE64_ENCODING,
         });
         tempAudioPathRef.current = tempFile;
         playbackUri = tempFile;
@@ -107,14 +119,17 @@ export default function useAiSpeechPlayer({
   });
 
   const speak = useCallback(
-    (input) => {
+    (input, options = {}) => {
       const text = normalizeSpeechText(input);
       if (!text) {
         onWarn?.("Nothing to read aloud.");
         return false;
       }
 
-      if (preferDeviceSpeech) {
+      const model = String(options?.model || "").trim();
+      const forceServer = Boolean(options?.forceServer);
+
+      if (preferDeviceSpeech && !forceServer) {
         cleanupSound()
           .then(() => {
             setLastAudioUrl("");
@@ -128,18 +143,18 @@ export default function useAiSpeechPlayer({
               onError: () => {
                 setIsPlaying(false);
                 onWarn?.("Device speech failed, falling back to AI voice.");
-                ttsMutation.mutate(text);
+                ttsMutation.mutate({ text, model: model || undefined });
               },
             });
             onSuccess?.("Speech is playing.");
           })
           .catch(() => {
-            ttsMutation.mutate(text);
+            ttsMutation.mutate({ text, model: model || undefined });
           });
         return true;
       }
 
-      ttsMutation.mutate(text);
+      ttsMutation.mutate({ text, model: model || undefined });
       return true;
     },
     [cleanupSound, onSuccess, onWarn, preferDeviceSpeech, ttsMutation],

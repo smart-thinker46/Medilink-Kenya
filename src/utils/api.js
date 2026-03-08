@@ -912,6 +912,14 @@ class ApiClient {
     return this.client.put("/admin/feature-flags", { flags });
   }
 
+  async adminGetAiVoiceConfig() {
+    return this.client.get("/admin/ai-voice/config");
+  }
+
+  async adminUpdateAiVoiceConfig(model) {
+    return this.client.put("/admin/ai-voice/config", { model });
+  }
+
   async adminGetDisputes() {
     return this.client.get("/admin/disputes");
   }
@@ -988,12 +996,44 @@ class ApiClient {
     return this.client.post("/ai/assistant", payload, { timeout: 90000 });
   }
 
+  async aiAppointmentCopilot(payload = {}) {
+    return this.client.post("/ai/appointment-copilot", payload, { timeout: 90000 });
+  }
+
+  async aiMedicalRecordSummary(payload = {}) {
+    return this.client.post("/ai/medical-record-summary", payload, { timeout: 90000 });
+  }
+
+  async aiMedicationSafety(payload = {}) {
+    return this.client.post("/ai/medication-safety", payload, { timeout: 90000 });
+  }
+
+  async aiStockForecast(payload = {}) {
+    return this.client.post("/ai/stock-forecast", payload, { timeout: 90000 });
+  }
+
   async aiAppHelp(payload = {}) {
     return this.client.post("/ai/app-help", payload);
   }
 
+  async aiKnowledgeHelp(payload = {}) {
+    return this.client.post("/ai/knowledge-help", payload, { timeout: 90000 });
+  }
+
   async aiHelpDesk(payload = {}) {
     return this.client.post("/ai/help-desk", payload, { timeout: 90000 });
+  }
+
+  async aiAdminOpsCopilot(payload = {}) {
+    return this.client.post("/ai/admin/ops-copilot", payload, { timeout: 90000 });
+  }
+
+  async aiTranslate(payload = {}) {
+    return this.client.post("/ai/translate", payload, { timeout: 90000 });
+  }
+
+  async aiChatAssist(payload = {}) {
+    return this.client.post("/ai/chat-assist", payload, { timeout: 90000 });
   }
 
   async aiAdminUsersAssistant(payload = {}) {

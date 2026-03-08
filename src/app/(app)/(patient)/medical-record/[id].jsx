@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { ArrowLeft, Pill, Activity, Eye, FileText, X, FileImage, FileText as FilePdf } from "lucide-react-native";
 import { WebView } from "react-native-webview";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import { useQuery } from "@tanstack/react-query";
 
 import ScreenLayout from "@/components/ScreenLayout";

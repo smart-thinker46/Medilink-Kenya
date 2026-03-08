@@ -13,13 +13,17 @@ import {
   Settings,
   Bell,
   PieChart,
+  LayoutDashboard,
 } from "lucide-react-native";
 import ResponsiveTabBar from "@/components/ResponsiveTabBar";
 import { useNotifications } from "@/utils/useNotifications";
 import { useChatUnreadCount } from "@/utils/useChatUnreadCount";
+import { useAuthStore } from "@/utils/auth/store";
 
 export default function HospitalTabLayout() {
   const { theme } = useAppTheme();
+  const { auth } = useAuthStore();
+  const isSuperAdmin = String(auth?.user?.role || "").toUpperCase() === "SUPER_ADMIN";
   const { unreadCount } = useNotifications();
   const { unreadCount: chatUnreadCount } = useChatUnreadCount();
   const overflowBadgeCount = unreadCount + chatUnreadCount;
@@ -32,6 +36,9 @@ export default function HospitalTabLayout() {
   ];
 
   const moreLinks = [
+    ...(isSuperAdmin
+      ? [{ key: "back-admin", title: "Back to Admin", href: "/(app)/(admin)", icon: LayoutDashboard }]
+      : []),
     { key: "profile", title: "Profile", href: "/(app)/(hospital)/profile", icon: Building2 },
     { key: "chat", title: "Chat", href: "/(app)/(shared)/conversations", icon: MessageCircle },
     { key: "notifications", title: "Notifications", href: "/(app)/(shared)/notifications", icon: Bell },

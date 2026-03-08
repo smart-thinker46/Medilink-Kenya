@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import {
   Shield,
@@ -27,6 +27,7 @@ import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
 import { useToast } from "@/components/ToastProvider";
 import apiClient from "@/utils/api";
+import useAiSpeechPlayer from "@/utils/useAiSpeechPlayer";
 
 const Card = ({ title, icon: Icon, theme, children, right }) => (
   <View
@@ -81,6 +82,11 @@ export default function AdminControlCenterScreen() {
   const router = useRouter();
   const { theme } = useAppTheme();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const { speak: speakAiText, isSpeaking: aiSpeaking } = useAiSpeechPlayer({
+    onWarn: (message) => showToast(message, "warning"),
+    onError: (message) => showToast(message, "error"),
+  });
 
   const [policyTitle, setPolicyTitle] = useState("");
   const [policyBody, setPolicyBody] = useState("");
@@ -112,6 +118,35 @@ export default function AdminControlCenterScreen() {
     },
     onError: (error) => showToast(error.message || "Flag update failed.", "error"),
   });
+
+  const aiVoiceConfigQuery = useQuery({
+    queryKey: ["admin-ai-voice-config", "control-center"],
+    queryFn: () => apiClient.adminGetAiVoiceConfig(),
+  });
+  const [selectedAiVoiceModel, setSelectedAiVoiceModel] = useState("");
+
+  const updateAiVoiceMutation = useMutation({
+    mutationFn: (model) => apiClient.adminUpdateAiVoiceConfig(model),
+    onSuccess: () => {
+      showToast("AI voice updated.", "success");
+      queryClient.invalidateQueries({ queryKey: ["admin-ai-voice-config"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-ai-voice-config", "control-center"] });
+      reloadAll();
+    },
+    onError: (error) => showToast(error.message || "Failed to update AI voice.", "error"),
+  });
+
+  useEffect(() => {
+    const selected = String(aiVoiceConfigQuery.data?.selectedModel || "").trim();
+    if (selected) {
+      setSelectedAiVoiceModel(selected);
+      return;
+    }
+    const firstModel = String(aiVoiceConfigQuery.data?.options?.[0]?.model || "").trim();
+    if (firstModel) {
+      setSelectedAiVoiceModel(firstModel);
+    }
+  }, [aiVoiceConfigQuery.data]);
 
   const createPolicyMutation = useMutation({
     mutationFn: () =>
@@ -252,6 +287,16 @@ export default function AdminControlCenterScreen() {
   const emergencyOps = data.emergencyOps || {};
   const compliance = data.complianceRequests || {};
   const featureFlags = data.featureFlags?.flags || {};
+  const aiVoiceConfig = aiVoiceConfigQuery.data || {};
+  const aiVoiceOptions = Array.isArray(aiVoiceConfig?.options) ? aiVoiceConfig.options : [];
+  const aiVoiceAppliedModel = String(aiVoiceConfig?.selectedModel || "");
+  const booleanFeatureFlags = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(featureFlags || {}).filter(([, value]) => typeof value === "boolean"),
+      ),
+    [featureFlags],
+  );
   const disputes = data.disputes || {};
 
   const matrixRows = useMemo(() => Object.entries(rolePermissions?.matrix || {}), [rolePermissions]);
@@ -574,7 +619,7 @@ export default function AdminControlCenterScreen() {
         </Card>
 
         <Card title="Feature Flags Console" icon={Flag} theme={theme}>
-          {Object.entries(featureFlags || {}).map(([key, enabled]) => (
+          {Object.entries(booleanFeatureFlags || {}).map(([key, enabled]) => (
             <TouchableOpacity
               key={key}
               onPress={() => updateFlagsMutation.mutate({ ...featureFlags, [key]: !enabled })}
@@ -598,6 +643,108 @@ export default function AdminControlCenterScreen() {
               </Text>
             </TouchableOpacity>
           ))}
+        </Card>
+
+        <Card title="AI Voice Model" icon={Bell} theme={theme}>
+          {aiVoiceOptions.length === 0 ? (
+            <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+              No model voices found. Set backend `PIPER_MODEL` and `PIPER_MODEL_VARIANTS`, then restart backend.
+            </Text>
+          ) : (
+            <>
+              {aiVoiceOptions.map((option) => {
+                const model = String(option?.model || "");
+                const selected = model === selectedAiVoiceModel;
+                const unavailable = option?.exists === false;
+                return (
+                  <TouchableOpacity
+                    key={option?.id || model}
+                    disabled={!model || unavailable}
+                    onPress={() => setSelectedAiVoiceModel(model)}
+                    style={{
+                      borderWidth: 1,
+                      borderColor: selected ? theme.primary : theme.border,
+                      backgroundColor: selected ? `${theme.primary}22` : theme.surface,
+                      borderRadius: 10,
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      marginBottom: 8,
+                      opacity: unavailable ? 0.55 : 1,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: selected ? theme.primary : theme.text,
+                        fontSize: 12,
+                        fontFamily: "Inter_600SemiBold",
+                      }}
+                    >
+                      {String(option?.label || "Voice")}
+                      {option?.isDefault ? " (Default)" : ""}
+                    </Text>
+                    <Text style={{ color: theme.textSecondary, fontSize: 10, marginTop: 2 }}>
+                      {unavailable
+                        ? "Model file not found on server."
+                        : model === aiVoiceAppliedModel
+                          ? "Applied"
+                          : selected
+                            ? "Selected"
+                            : "Tap to select"}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+
+              <TouchableOpacity
+                disabled={!selectedAiVoiceModel || aiSpeaking}
+                onPress={() =>
+                  speakAiText("Hello, I am Medilink AI voice preview.", {
+                    forceServer: true,
+                    model: selectedAiVoiceModel,
+                  })
+                }
+                style={{
+                  borderRadius: 10,
+                  paddingVertical: 9,
+                  alignItems: "center",
+                  backgroundColor: theme.surface,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  marginBottom: 8,
+                  opacity: !selectedAiVoiceModel || aiSpeaking ? 0.6 : 1,
+                }}
+              >
+                <Text style={{ fontSize: 12, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                  Preview Selected Voice
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                disabled={
+                  !selectedAiVoiceModel ||
+                  selectedAiVoiceModel === aiVoiceAppliedModel ||
+                  updateAiVoiceMutation.isPending
+                }
+                onPress={() => updateAiVoiceMutation.mutate(selectedAiVoiceModel)}
+                style={{
+                  borderRadius: 10,
+                  paddingVertical: 9,
+                  alignItems: "center",
+                  backgroundColor: theme.primary,
+                  opacity:
+                    !selectedAiVoiceModel ||
+                    selectedAiVoiceModel === aiVoiceAppliedModel ||
+                    updateAiVoiceMutation.isPending
+                      ? 0.6
+                      : 1,
+                }}
+              >
+                <Text style={{ fontSize: 12, color: "#FFFFFF", fontFamily: "Inter_600SemiBold" }}>
+                  Apply Selected Voice
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
         </Card>
 
         <Card title="Dispute & Refund Management" icon={Scale} theme={theme}>

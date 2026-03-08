@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -10,7 +10,18 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { ArrowLeft, Crown, Sparkles, Search, FileText, MessageCircle, Mic, Volume2 } from "lucide-react-native";
+import {
+  ArrowLeft,
+  Crown,
+  Sparkles,
+  Search,
+  FileText,
+  MessageCircle,
+  Mic,
+  Volume2,
+  CalendarClock,
+  ShieldAlert,
+} from "lucide-react-native";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import ScreenLayout from "@/components/ScreenLayout";
@@ -56,10 +67,21 @@ export default function PatientAiAssistantScreen() {
   const [searchResults, setSearchResults] = useState([]);
   const [summary, setSummary] = useState(null);
   const [assistantAnswer, setAssistantAnswer] = useState("");
-  const { speak: speakAiText, isSpeaking: aiSpeaking } = useAiSpeechPlayer({
+  const [appointmentQuery, setAppointmentQuery] = useState("");
+  const [appointmentResult, setAppointmentResult] = useState(null);
+  const [medicationsInput, setMedicationsInput] = useState("");
+  const [allergiesInput, setAllergiesInput] = useState("");
+  const [medicationSafetyResult, setMedicationSafetyResult] = useState(null);
+  const { speak: speakAiText, stop: stopAiSpeech, isSpeaking: aiSpeaking } = useAiSpeechPlayer({
     onWarn: (message) => showToast(message, "warning"),
     onError: (message) => showToast(message, "error"),
   });
+
+  useEffect(() => {
+    return () => {
+      stopAiSpeech().catch(() => undefined);
+    };
+  }, [stopAiSpeech]);
 
   const aiSettingsQuery = useQuery({
     queryKey: ["ai-settings", "patient-ai-assistant"],
@@ -85,9 +107,32 @@ export default function PatientAiAssistantScreen() {
   });
 
   const aiSummaryMutation = useMutation({
-    mutationFn: () => apiClient.aiHealthSummary({ patientId: auth?.user?.id }),
+    mutationFn: () => apiClient.aiMedicalRecordSummary({ patientId: auth?.user?.id }),
     onSuccess: (data) => setSummary(data || null),
     onError: (error) => showToast(error.message || "AI summary unavailable.", "error"),
+  });
+
+  const aiAppointmentMutation = useMutation({
+    mutationFn: () =>
+      apiClient.aiAppointmentCopilot({
+        query: appointmentQuery,
+        preferredDate: new Date().toISOString().slice(0, 10),
+        include: ["medic", "hospital"],
+        limit: 8,
+      }),
+    onSuccess: (data) => setAppointmentResult(data || null),
+    onError: (error) => showToast(error.message || "Appointment copilot unavailable.", "error"),
+  });
+
+  const aiMedicationMutation = useMutation({
+    mutationFn: () =>
+      apiClient.aiMedicationSafety({
+        patientId: auth?.user?.id,
+        medications: medicationsInput,
+        allergies: allergiesInput,
+      }),
+    onSuccess: (data) => setMedicationSafetyResult(data || null),
+    onError: (error) => showToast(error.message || "Medication safety unavailable.", "error"),
   });
 
   const aiAssistantMutation = useMutation({
@@ -97,10 +142,11 @@ export default function PatientAiAssistantScreen() {
   });
 
   const aiHelpMutation = useMutation({
-    mutationFn: ({ topic, query }) => apiClient.aiAppHelp({ topic, query }),
+    mutationFn: ({ topic, query }) => apiClient.aiKnowledgeHelp({ topic, query }),
     onSuccess: (data) => {
-      setAssistantAnswer(formatAppHelpAnswer(data));
-      if (data?.summary) {
+      const response = String(data?.answer || "").trim() || formatAppHelpAnswer(data);
+      setAssistantAnswer(response);
+      if (response) {
         showToast("App guide generated.", "success");
       }
     },
@@ -157,6 +203,38 @@ export default function PatientAiAssistantScreen() {
         ? `Next steps: ${data.nextSteps.slice(0, 4).join(". ")}`
         : "",
       String(data?.disclaimer || "").trim(),
+    ]
+      .filter(Boolean)
+      .join(". ");
+  };
+
+  const getAppointmentSpeechText = (data) => {
+    if (!data) return "";
+    if (String(data?.speechText || "").trim()) return String(data.speechText).trim();
+    const first = Array.isArray(data?.recommendations) ? data.recommendations[0] : null;
+    return [
+      String(data?.summary || "").trim(),
+      first?.name ? `Top match is ${String(first.name)}.` : "",
+      Array.isArray(first?.availableSlots) && first.availableSlots.length
+        ? `Available slots include ${first.availableSlots.slice(0, 3).join(", ")}.`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(". ");
+  };
+
+  const getMedicationSafetySpeechText = (data) => {
+    if (!data) return "";
+    if (String(data?.speechText || "").trim()) return String(data.speechText).trim();
+    return [
+      `Risk level is ${String(data?.riskLevel || "unknown")}.`,
+      String(data?.summary || "").trim(),
+      Array.isArray(data?.warnings) && data.warnings.length
+        ? `Warnings: ${data.warnings.slice(0, 3).join(". ")}`
+        : "",
+      Array.isArray(data?.recommendations) && data.recommendations.length
+        ? `Recommendations: ${data.recommendations.slice(0, 3).join(". ")}`
+        : "",
     ]
       .filter(Boolean)
       .join(". ");
@@ -364,6 +442,217 @@ export default function PatientAiAssistantScreen() {
                   ) : null}
                 </View>
               ))}
+            </View>
+          )}
+        </View>
+
+        <View
+          style={{
+            backgroundColor: theme.card,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: theme.border,
+            padding: 16,
+            marginBottom: 16,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
+            <CalendarClock color={theme.info} size={16} />
+            <Text style={{ marginLeft: 8, fontSize: 14, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+              Appointment Copilot
+            </Text>
+          </View>
+          <TextInput
+            value={appointmentQuery}
+            onChangeText={setAppointmentQuery}
+            placeholder="Describe who you need: e.g. female cardiologist in Nairobi"
+            placeholderTextColor={theme.textSecondary}
+            style={{
+              borderWidth: 1,
+              borderColor: theme.border,
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+              color: theme.text,
+              fontSize: 13,
+            }}
+          />
+          <TouchableOpacity
+            onPress={() => aiAppointmentMutation.mutate()}
+            disabled={!canUse || !appointmentQuery.trim() || aiAppointmentMutation.isLoading}
+            style={{
+              marginTop: 10,
+              backgroundColor: theme.info,
+              borderRadius: 10,
+              paddingVertical: 10,
+              alignItems: "center",
+              opacity: !canUse || !appointmentQuery.trim() ? 0.6 : 1,
+            }}
+          >
+            {aiAppointmentMutation.isLoading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={{ color: "#FFFFFF", fontSize: 13, fontFamily: "Inter_600SemiBold" }}>
+                Find Providers and Slots
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          {!!appointmentResult?.summary && (
+            <View style={{ marginTop: 10 }}>
+              <TouchableOpacity
+                onPress={() => speakAiText(getAppointmentSpeechText(appointmentResult))}
+                disabled={aiSpeaking}
+                style={{
+                  alignSelf: "flex-start",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginBottom: 8,
+                  backgroundColor: theme.surface,
+                  opacity: aiSpeaking ? 0.7 : 1,
+                }}
+              >
+                <Volume2 color={theme.iconColor} size={14} />
+                <Text style={{ marginLeft: 6, fontSize: 11, color: theme.textSecondary }}>
+                  {aiSpeaking ? "Reading..." : "Read Copilot"}
+                </Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 13, color: theme.text, lineHeight: 20 }}>
+                {appointmentResult.summary}
+              </Text>
+              {(Array.isArray(appointmentResult?.recommendations)
+                ? appointmentResult.recommendations
+                : []
+              )
+                .slice(0, 3)
+                .map((item, index) => (
+                  <Text
+                    key={`${String(item?.id || "provider")}-${index}`}
+                    style={{ marginTop: 6, fontSize: 12, color: theme.textSecondary, lineHeight: 18 }}
+                  >
+                    {index + 1}. {String(item?.name || "Provider")}
+                    {Array.isArray(item?.availableSlots) && item.availableSlots.length
+                      ? ` • slots: ${item.availableSlots.join(", ")}`
+                      : ""}
+                  </Text>
+                ))}
+            </View>
+          )}
+        </View>
+
+        <View
+          style={{
+            backgroundColor: theme.card,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: theme.border,
+            padding: 16,
+            marginBottom: 16,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
+            <ShieldAlert color={theme.warning} size={16} />
+            <Text style={{ marginLeft: 8, fontSize: 14, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+              Medication Safety Check
+            </Text>
+          </View>
+          <TextInput
+            value={medicationsInput}
+            onChangeText={setMedicationsInput}
+            placeholder="Medications (comma separated)"
+            placeholderTextColor={theme.textSecondary}
+            style={{
+              borderWidth: 1,
+              borderColor: theme.border,
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+              color: theme.text,
+              fontSize: 13,
+            }}
+          />
+          <TextInput
+            value={allergiesInput}
+            onChangeText={setAllergiesInput}
+            placeholder="Allergies (optional, comma separated)"
+            placeholderTextColor={theme.textSecondary}
+            style={{
+              marginTop: 8,
+              borderWidth: 1,
+              borderColor: theme.border,
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+              color: theme.text,
+              fontSize: 13,
+            }}
+          />
+          <TouchableOpacity
+            onPress={() => aiMedicationMutation.mutate()}
+            disabled={!canUse || !medicationsInput.trim() || aiMedicationMutation.isLoading}
+            style={{
+              marginTop: 10,
+              backgroundColor: theme.warning,
+              borderRadius: 10,
+              paddingVertical: 10,
+              alignItems: "center",
+              opacity: !canUse || !medicationsInput.trim() ? 0.6 : 1,
+            }}
+          >
+            {aiMedicationMutation.isLoading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={{ color: "#FFFFFF", fontSize: 13, fontFamily: "Inter_600SemiBold" }}>
+                Check Safety
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          {!!medicationSafetyResult?.summary && (
+            <View style={{ marginTop: 10 }}>
+              <TouchableOpacity
+                onPress={() => speakAiText(getMedicationSafetySpeechText(medicationSafetyResult))}
+                disabled={aiSpeaking}
+                style={{
+                  alignSelf: "flex-start",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginBottom: 8,
+                  backgroundColor: theme.surface,
+                  opacity: aiSpeaking ? 0.7 : 1,
+                }}
+              >
+                <Volume2 color={theme.iconColor} size={14} />
+                <Text style={{ marginLeft: 6, fontSize: 11, color: theme.textSecondary }}>
+                  {aiSpeaking ? "Reading..." : "Read Safety Report"}
+                </Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 13, color: theme.text, lineHeight: 20 }}>
+                Risk: {String(medicationSafetyResult?.riskLevel || "UNKNOWN")} •{" "}
+                {medicationSafetyResult.summary}
+              </Text>
+              {Array.isArray(medicationSafetyResult?.warnings) &&
+              medicationSafetyResult.warnings.length > 0 ? (
+                <Text style={{ marginTop: 6, fontSize: 12, color: theme.warning, lineHeight: 18 }}>
+                  Warnings: {medicationSafetyResult.warnings.join(" • ")}
+                </Text>
+              ) : null}
+              {Array.isArray(medicationSafetyResult?.recommendations) &&
+              medicationSafetyResult.recommendations.length > 0 ? (
+                <Text style={{ marginTop: 6, fontSize: 12, color: theme.textSecondary, lineHeight: 18 }}>
+                  Recommendations: {medicationSafetyResult.recommendations.join(" • ")}
+                </Text>
+              ) : null}
             </View>
           )}
         </View>

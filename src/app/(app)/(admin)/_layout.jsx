@@ -13,6 +13,7 @@ import {
   History,
   ShieldAlert,
   Mail,
+  Sparkles,
 } from "lucide-react-native";
 import ResponsiveTabBar from "@/components/ResponsiveTabBar";
 import { useNotifications } from "@/utils/useNotifications";
@@ -26,15 +27,16 @@ export default function AdminTabLayout() {
     { key: "users", title: "Users", href: "/(app)/(admin)/users", icon: Users },
     { key: "analytics", title: "Analytics", href: "/(app)/(admin)/analytics", icon: BarChart3 },
     { key: "notifications", title: "Notify", href: "/(app)/(admin)/notifications", icon: Bell },
+    { key: "subscriptions", title: "Subscriptions", href: "/(app)/(admin)/subscriptions", icon: CreditCard },
   ];
 
   const moreLinks = [
     { key: "chat", title: "Chat", href: "/(app)/(shared)/conversations", icon: MessageCircle },
     { key: "email-center", title: "Email Center", href: "/(app)/(admin)/email-center", icon: Mail },
     { key: "video-call", title: "Video Call", href: "/(app)/(admin)/video-call", icon: Video },
+    { key: "ai-features", title: "AI Features", href: "/(app)/(shared)/ai-finder", icon: Sparkles },
     { key: "control-center", title: "Control Center", href: "/(app)/(admin)/control-center", icon: ShieldAlert },
     { key: "settings", title: "Settings", href: "/(app)/(admin)/settings", icon: Settings },
-    { key: "subscriptions", title: "Subscriptions", href: "/(app)/(admin)/subscriptions", icon: CreditCard },
     { key: "audit", title: "Audit Logs", href: "/(app)/(admin)/audit-logs", icon: FileText },
     { key: "complaints", title: "Complaints", href: "/(app)/(admin)/complaints", icon: MessageCircle },
     { key: "history", title: "History", href: "/(app)/complaints-history", icon: History },

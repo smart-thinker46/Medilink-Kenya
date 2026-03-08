@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
   View,
@@ -10,7 +10,7 @@ import {
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "expo-router";
 import { MotiView } from "moti";
 import {
@@ -54,6 +54,7 @@ export default function AdminOverviewScreen() {
   const { auth } = useAuthStore();
   const firstName = getFirstName(auth?.user, "Admin");
   const timeGreeting = getTimeGreeting();
+  const queryClient = useQueryClient();
   const { isUserOnline } = useOnlineUsers();
   const { showToast } = useToast();
   const isOnline = isUserOnline(auth?.user);
@@ -96,6 +97,38 @@ export default function AdminOverviewScreen() {
   const aiProviderLabel = String(aiState.displayProvider || "Medilink AI");
   const aiBusy = aiSettingsQuery.isLoading || aiUpdateMutation.isLoading;
   const aiBlockedReason = aiState.blockedReason || "";
+  const aiVoiceConfigQuery = useQuery({
+    queryKey: ["admin-ai-voice-config"],
+    queryFn: () => apiClient.adminGetAiVoiceConfig(),
+    enabled: Boolean(auth?.token || auth?.jwt || auth?.accessToken),
+  });
+  const [selectedAiVoiceModel, setSelectedAiVoiceModel] = useState("");
+  const aiVoiceUpdateMutation = useMutation({
+    mutationFn: (model) => apiClient.adminUpdateAiVoiceConfig(model),
+    onSuccess: (data) => {
+      const nextModel = String(data?.selectedModel || "").trim();
+      if (nextModel) {
+        setSelectedAiVoiceModel(nextModel);
+      }
+      queryClient.invalidateQueries({ queryKey: ["admin-ai-voice-config"] });
+      showToast("AI voice updated.", "success");
+    },
+    onError: (error) => {
+      showToast(error?.message || "Failed to update AI voice.", "error");
+    },
+  });
+
+  useEffect(() => {
+    const selected = String(aiVoiceConfigQuery.data?.selectedModel || "").trim();
+    if (selected) {
+      setSelectedAiVoiceModel(selected);
+      return;
+    }
+    const firstModel = String(aiVoiceConfigQuery.data?.options?.[0]?.model || "").trim();
+    if (firstModel) {
+      setSelectedAiVoiceModel(firstModel);
+    }
+  }, [aiVoiceConfigQuery.data]);
 
   const [aiUserQuery, setAiUserQuery] = useState("");
   const [aiUserResponse, setAiUserResponse] = useState(null);
@@ -296,7 +329,7 @@ export default function AdminOverviewScreen() {
 
   const aiHelpDeskMutation = useMutation({
     mutationFn: ({ query, execute }) =>
-      apiClient.aiHelpDesk({
+      apiClient.aiAdminOpsCopilot({
         query,
         execute: Boolean(execute),
         tone: aiEmailTone,
@@ -412,10 +445,22 @@ export default function AdminOverviewScreen() {
           reject(error);
         }
       };
-      recorder.onerror = () => reject(new Error("Web recorder failed."));
+      recorder.onerror = () => {
+        if (stream?.getTracks) {
+          stream.getTracks().forEach((track) => track.stop());
+        }
+        helpDeskWebMediaStreamRef.current = null;
+        helpDeskWebMediaRecorderRef.current = null;
+        reject(new Error("Web recorder failed."));
+      };
       try {
         recorder.stop();
       } catch (error) {
+        if (stream?.getTracks) {
+          stream.getTracks().forEach((track) => track.stop());
+        }
+        helpDeskWebMediaStreamRef.current = null;
+        helpDeskWebMediaRecorderRef.current = null;
         reject(error);
       }
     });
@@ -428,7 +473,6 @@ export default function AdminOverviewScreen() {
       throw new Error("Browser voice recording is not supported.");
     }
     const stream = await mediaDevices.getUserMedia({ audio: true });
-    helpDeskWebMediaStreamRef.current = stream;
     const mimeCandidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
     const selectedMime = mimeCandidates.find((mime) => {
       try {
@@ -439,17 +483,27 @@ export default function AdminOverviewScreen() {
         return false;
       }
     });
-    const recorder = selectedMime
-      ? new MediaRecorderApi(stream, { mimeType: selectedMime })
-      : new MediaRecorderApi(stream);
-    helpDeskWebAudioChunksRef.current = [];
-    recorder.ondataavailable = (event) => {
-      if (event?.data && event.data.size > 0) {
-        helpDeskWebAudioChunksRef.current.push(event.data);
+    helpDeskWebMediaStreamRef.current = stream;
+    try {
+      const recorder = selectedMime
+        ? new MediaRecorderApi(stream, { mimeType: selectedMime })
+        : new MediaRecorderApi(stream);
+      helpDeskWebAudioChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event?.data && event.data.size > 0) {
+          helpDeskWebAudioChunksRef.current.push(event.data);
+        }
+      };
+      recorder.start();
+      helpDeskWebMediaRecorderRef.current = recorder;
+    } catch (error) {
+      if (stream?.getTracks) {
+        stream.getTracks().forEach((track) => track.stop());
       }
-    };
-    recorder.start();
-    helpDeskWebMediaRecorderRef.current = recorder;
+      helpDeskWebMediaStreamRef.current = null;
+      helpDeskWebMediaRecorderRef.current = null;
+      throw error;
+    }
   };
 
   const toggleHelpDeskVoice = async () => {
@@ -820,6 +874,7 @@ export default function AdminOverviewScreen() {
               <CreditCard color={theme.primary} size={22} />
             </View>
           </View>
+
         </View>
 
         <View style={{ paddingHorizontal: 24 }}>
@@ -987,6 +1042,116 @@ export default function AdminOverviewScreen() {
                 Open AI Finder
               </Text>
             </TouchableOpacity>
+
+            <View
+              style={{
+                marginTop: 12,
+                borderTopWidth: 1,
+                borderTopColor: theme.border,
+                paddingTop: 10,
+              }}
+            >
+              <Text
+                style={{
+                  color: theme.text,
+                  fontSize: 12,
+                  fontFamily: "Inter_600SemiBold",
+                  marginBottom: 8,
+                }}
+              >
+                Model Voice (Admin)
+              </Text>
+              {(aiVoiceConfigQuery.data?.options || []).map((option) => {
+                const optionModel = String(option?.model || "");
+                const isSelected = selectedAiVoiceModel === optionModel;
+                const isUnavailable = option?.exists === false;
+                return (
+                  <TouchableOpacity
+                    key={option?.id || optionModel}
+                    onPress={() => setSelectedAiVoiceModel(optionModel)}
+                    disabled={!optionModel || isUnavailable}
+                    style={{
+                      borderWidth: 1,
+                      borderColor: isSelected ? theme.primary : theme.border,
+                      backgroundColor: isSelected ? `${theme.primary}22` : theme.surface,
+                      borderRadius: 10,
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      marginBottom: 8,
+                      opacity: isUnavailable ? 0.55 : 1,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: isSelected ? theme.primary : theme.text,
+                        fontSize: 12,
+                        fontFamily: "Inter_600SemiBold",
+                      }}
+                    >
+                      {String(option?.label || "Voice")}
+                      {option?.isDefault ? " (Default)" : ""}
+                    </Text>
+                    <Text style={{ color: theme.textSecondary, fontSize: 10, marginTop: 2 }}>
+                      {isUnavailable ? "Model file not found on server." : "Available"}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+              {(aiVoiceConfigQuery.data?.options || []).length > 0 ? (
+                <TouchableOpacity
+                  onPress={() =>
+                    speakAiText("Hello, I am Medilink AI voice preview.", {
+                      forceServer: true,
+                      model: selectedAiVoiceModel,
+                    })
+                  }
+                  disabled={!selectedAiVoiceModel || aiSpeaking}
+                  style={{
+                    borderRadius: 10,
+                    paddingVertical: 9,
+                    alignItems: "center",
+                    backgroundColor: theme.surface,
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                    marginBottom: 8,
+                    opacity: !selectedAiVoiceModel || aiSpeaking ? 0.6 : 1,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                    Preview Selected Voice
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={{ color: theme.textSecondary, fontSize: 11, marginBottom: 8 }}>
+                  No model voices found. Set backend `PIPER_MODEL` and `PIPER_MODEL_VARIANTS`, then restart backend.
+                </Text>
+              )}
+
+              <TouchableOpacity
+                onPress={() => aiVoiceUpdateMutation.mutate(selectedAiVoiceModel)}
+                disabled={
+                  !selectedAiVoiceModel ||
+                  aiVoiceUpdateMutation.isLoading ||
+                  aiVoiceConfigQuery.isLoading
+                }
+                style={{
+                  borderRadius: 10,
+                  paddingVertical: 9,
+                  alignItems: "center",
+                  backgroundColor: theme.primary,
+                  opacity:
+                    !selectedAiVoiceModel ||
+                    aiVoiceUpdateMutation.isLoading ||
+                    aiVoiceConfigQuery.isLoading
+                      ? 0.6
+                      : 1,
+                }}
+              >
+                <Text style={{ fontSize: 12, color: "#FFFFFF", fontFamily: "Inter_600SemiBold" }}>
+                  Apply Selected Voice
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View
@@ -1637,12 +1802,14 @@ export default function AdminOverviewScreen() {
           </Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
             {[
-              { label: "Complaints", route: "/(app)/(admin)/complaints" },
+              { label: "Open Patient Dashboard", route: "/(app)/(patient)" },
+              { label: "Open Medic Dashboard", route: "/(app)/(medic)" },
+              { label: "Open Hospital Dashboard", route: "/(app)/(hospital)" },
+              { label: "Open Pharmacy Dashboard", route: "/(app)/(pharmacy)" },
+              { label: "All Users", route: "/(app)/(admin)/users" },
               { label: "Subscriptions", route: "/(app)/(admin)/subscriptions" },
               { label: "Audit Logs", route: "/(app)/(admin)/audit-logs" },
-              { label: "All Users", route: "/(app)/(admin)/users" },
-              { label: "Open Medic Dashboard", route: "/(app)/(medic)" },
-              { label: "Open Pharmacy Dashboard", route: "/(app)/(pharmacy)" },
+              { label: "Complaints", route: "/(app)/(admin)/complaints" },
             ].map((item) => (
               <TouchableOpacity
                 key={item.label}

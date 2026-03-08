@@ -91,9 +91,9 @@ export default function AiFinderScreen() {
   const role = String(auth?.user?.role || "").toUpperCase();
   const displayName = useMemo(() => resolveDisplayName(auth?.user), [auth?.user]);
   const hasRedirectedToPaymentRef = useRef(false);
-  const hasPlayedGreetingRef = useRef(false);
+  const [hasTriggeredGreeting, setHasTriggeredGreeting] = useState(false);
 
-  const { speak: speakGreeting, stop: stopGreeting } = useAiSpeechPlayer({
+  const { speak: speakGreeting, stop: stopGreeting, isSpeaking: isGreetingSpeaking } = useAiSpeechPlayer({
     preferDeviceSpeech: true,
   });
 
@@ -115,20 +115,6 @@ export default function AiFinderScreen() {
       params: { role },
     });
   }, [aiSettingsQuery.isSuccess, canUseAi, isPremium, role, router, showToast]);
-
-  useEffect(() => {
-    if (!aiSettingsQuery.isSuccess || !canUseAi) return;
-    if (hasPlayedGreetingRef.current) return;
-    hasPlayedGreetingRef.current = true;
-    const greeting = getTimeGreeting();
-    const introText = [
-      `${greeting}${displayName ? `, ${displayName}` : ""}.`,
-      "Hi. I am Medilink AI.",
-      "I help you find medicines, pharmacies, and medics quickly using text or voice.",
-      "Please describe what you want me to find.",
-    ].join(" ");
-    speakGreeting(introText);
-  }, [aiSettingsQuery.isSuccess, canUseAi, displayName, speakGreeting]);
 
   React.useEffect(() => {
     return () => {
@@ -259,6 +245,26 @@ export default function AiFinderScreen() {
     finderMutation.mutate({ text: query, scope });
   };
 
+  const triggerAiVoiceGreeting = () => {
+    if (!canUseAi) {
+      showToast(blockedReason || "AI is currently unavailable for this account.", "warning");
+      return;
+    }
+    if (isGreetingSpeaking) {
+      stopGreeting().catch(() => undefined);
+      return;
+    }
+    const greeting = getTimeGreeting();
+    const introText = [
+      `${greeting}${displayName ? `, ${displayName}` : ""}.`,
+      "Hi. I am Medilink AI.",
+      "I help you find medicines, pharmacies, and medics quickly using text or voice.",
+      "Please describe what you want me to find.",
+    ].join(" ");
+    setHasTriggeredGreeting(true);
+    speakGreeting(introText);
+  };
+
   const stopWebRecorder = async () => {
     const recorder = webMediaRecorderRef.current;
     if (!recorder) throw new Error("Recorder not ready.");
@@ -278,10 +284,18 @@ export default function AiFinderScreen() {
           reject(error);
         }
       };
-      recorder.onerror = () => reject(new Error("Web recorder failed."));
+      recorder.onerror = () => {
+        if (stream?.getTracks) stream.getTracks().forEach((track) => track.stop());
+        webMediaStreamRef.current = null;
+        webMediaRecorderRef.current = null;
+        reject(new Error("Web recorder failed."));
+      };
       try {
         recorder.stop();
       } catch (error) {
+        if (stream?.getTracks) stream.getTracks().forEach((track) => track.stop());
+        webMediaStreamRef.current = null;
+        webMediaRecorderRef.current = null;
         reject(error);
       }
     });
@@ -294,7 +308,6 @@ export default function AiFinderScreen() {
       throw new Error("Browser voice recording is not supported.");
     }
     const stream = await mediaDevices.getUserMedia({ audio: true });
-    webMediaStreamRef.current = stream;
     const mimeCandidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
     const selectedMime = mimeCandidates.find((mime) => {
       try {
@@ -305,17 +318,25 @@ export default function AiFinderScreen() {
         return false;
       }
     });
-    const recorder = selectedMime
-      ? new MediaRecorderApi(stream, { mimeType: selectedMime })
-      : new MediaRecorderApi(stream);
-    webAudioChunksRef.current = [];
-    recorder.ondataavailable = (event) => {
-      if (event?.data && event.data.size > 0) {
-        webAudioChunksRef.current.push(event.data);
-      }
-    };
-    recorder.start();
-    webMediaRecorderRef.current = recorder;
+    webMediaStreamRef.current = stream;
+    try {
+      const recorder = selectedMime
+        ? new MediaRecorderApi(stream, { mimeType: selectedMime })
+        : new MediaRecorderApi(stream);
+      webAudioChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event?.data && event.data.size > 0) {
+          webAudioChunksRef.current.push(event.data);
+        }
+      };
+      recorder.start();
+      webMediaRecorderRef.current = recorder;
+    } catch (error) {
+      if (stream?.getTracks) stream.getTracks().forEach((track) => track.stop());
+      webMediaStreamRef.current = null;
+      webMediaRecorderRef.current = null;
+      throw error;
+    }
   };
 
   const toggleVoiceQuery = async () => {
@@ -449,6 +470,50 @@ export default function AiFinderScreen() {
             <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{blockedReason}</Text>
           </View>
         )}
+
+        <View
+          style={{
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: theme.border,
+            backgroundColor: theme.card,
+            padding: 10,
+            marginBottom: 12,
+          }}
+        >
+          <Text style={{ color: theme.textSecondary, fontSize: 12, marginBottom: 8 }}>
+            AI voice remains silent until you tap the button below.
+          </Text>
+          <TouchableOpacity
+            onPress={triggerAiVoiceGreeting}
+            disabled={!canUseAi}
+            style={{
+              height: 38,
+              borderRadius: 10,
+              backgroundColor: theme.primary,
+              opacity: canUseAi ? 1 : 0.7,
+              alignItems: "center",
+              justifyContent: "center",
+              flexDirection: "row",
+            }}
+          >
+            <Sparkles color="#fff" size={14} />
+            <Text
+              style={{
+                marginLeft: 6,
+                color: "#fff",
+                fontSize: 12,
+                fontFamily: "Inter_600SemiBold",
+              }}
+            >
+              {isGreetingSpeaking
+                ? "Stop AI Voice"
+                : hasTriggeredGreeting
+                  ? "Replay AI Voice"
+                  : "Start AI Voice"}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
           {SCOPES.map((item) => {

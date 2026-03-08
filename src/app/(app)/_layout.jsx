@@ -48,7 +48,9 @@ export default function AppLayout() {
 
       const superAdminAllowedGroups = new Set([
         "(admin)",
+        "(patient)",
         "(medic)",
+        "(hospital)",
         "(pharmacy)",
       ]);
       if (

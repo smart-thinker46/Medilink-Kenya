@@ -13,7 +13,7 @@ import { ArrowLeft, Mic, PhoneCall, ShieldAlert, Sparkles } from "lucide-react-n
 import { useMutation, useQuery } from "@tanstack/react-query";
 import * as DocumentPicker from "expo-document-picker";
 import { Audio } from "expo-av";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -27,6 +27,7 @@ const MODES = [
   { id: "support", title: "Support" },
   { id: "emergency", title: "Emergency" },
 ];
+const BASE64_ENCODING = FileSystem?.EncodingType?.Base64 || "base64";
 
 export default function PatientAiVoiceScreen() {
   const router = useRouter();
@@ -136,7 +137,7 @@ export default function PatientAiVoiceScreen() {
       if (base64Audio) {
         const tempFile = `${FileSystem.cacheDirectory || ""}medilink-ai-voice-${Date.now()}.wav`;
         await FileSystem.writeAsStringAsync(tempFile, base64Audio, {
-          encoding: FileSystem.EncodingType.Base64,
+          encoding: BASE64_ENCODING,
         });
         tempAudioPathRef.current = tempFile;
         playbackUri = tempFile;

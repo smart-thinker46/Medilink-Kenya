@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Alert, View, Text, ScrollView, TouchableOpacity, TextInput, Platform } from "react-native";
+import { Alert, View, Text, ScrollView, TouchableOpacity, TextInput, Platform, BackHandler } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -16,6 +16,7 @@ import {
   Trash2,
   Mic,
   Sparkles,
+  ArrowLeft,
 } from "lucide-react-native";
 import { Picker } from "@react-native-picker/picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -438,11 +439,21 @@ export default function AdminUsersScreen() {
         }
       };
       recorder.onerror = () => {
+        if (stream?.getTracks) {
+          stream.getTracks().forEach((track) => track.stop());
+        }
+        webMediaStreamRef.current = null;
+        webMediaRecorderRef.current = null;
         reject(new Error("Web recorder failed."));
       };
       try {
         recorder.stop();
       } catch (error) {
+        if (stream?.getTracks) {
+          stream.getTracks().forEach((track) => track.stop());
+        }
+        webMediaStreamRef.current = null;
+        webMediaRecorderRef.current = null;
         reject(error);
       }
     });
@@ -455,7 +466,6 @@ export default function AdminUsersScreen() {
       throw new Error("Browser voice recording is not supported.");
     }
     const stream = await mediaDevices.getUserMedia({ audio: true });
-    webMediaStreamRef.current = stream;
     const mimeCandidates = [
       "audio/webm;codecs=opus",
       "audio/webm",
@@ -470,18 +480,28 @@ export default function AdminUsersScreen() {
         return false;
       }
     });
-    const recorder = selectedMime
-      ? new MediaRecorderApi(stream, { mimeType: selectedMime })
-      : new MediaRecorderApi(stream);
+    webMediaStreamRef.current = stream;
+    try {
+      const recorder = selectedMime
+        ? new MediaRecorderApi(stream, { mimeType: selectedMime })
+        : new MediaRecorderApi(stream);
 
-    webAudioChunksRef.current = [];
-    recorder.ondataavailable = (event) => {
-      if (event?.data && event.data.size > 0) {
-        webAudioChunksRef.current.push(event.data);
+      webAudioChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event?.data && event.data.size > 0) {
+          webAudioChunksRef.current.push(event.data);
+        }
+      };
+      recorder.start();
+      webMediaRecorderRef.current = recorder;
+    } catch (error) {
+      if (stream?.getTracks) {
+        stream.getTracks().forEach((track) => track.stop());
       }
-    };
-    recorder.start();
-    webMediaRecorderRef.current = recorder;
+      webMediaStreamRef.current = null;
+      webMediaRecorderRef.current = null;
+      throw error;
+    }
   };
 
   const toggleVoiceSearch = async () => {
@@ -906,6 +926,19 @@ export default function AdminUsersScreen() {
     [theme],
   );
 
+  const goToAdminSection = () => {
+    router.replace("/(app)/(admin)");
+  };
+
+  React.useEffect(() => {
+    if (Platform.OS !== "android") return undefined;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      goToAdminSection();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [router]);
+
   return (
     <ScreenLayout>
       <ScrollView
@@ -917,16 +950,34 @@ export default function AdminUsersScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Text
-          style={{
-            fontSize: 22,
-            fontFamily: "Nunito_700Bold",
-            color: theme.text,
-            marginBottom: 12,
-          }}
-        >
-          Users
-        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
+          <TouchableOpacity
+            onPress={goToAdminSection}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: theme.surface,
+              marginRight: 12,
+              borderWidth: 1,
+              borderColor: theme.border,
+            }}
+          >
+            <ArrowLeft color={theme.text} size={18} />
+          </TouchableOpacity>
+          <Text
+            style={{
+              fontSize: 22,
+              fontFamily: "Nunito_700Bold",
+              color: theme.text,
+              flex: 1,
+            }}
+          >
+            Users
+          </Text>
+        </View>
 
         <View
           style={{
