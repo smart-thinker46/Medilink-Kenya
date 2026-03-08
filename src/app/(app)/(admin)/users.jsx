@@ -29,6 +29,10 @@ import { shareCsv, emailCsv } from "@/utils/csvExport";
 import { useVideoCall } from "@/utils/useVideoCall";
 import VideoCall from "@/components/VideoCall";
 import { useOnlineUsers } from "@/utils/useOnlineUsers";
+import { useAuthStore } from "@/utils/auth/store";
+
+const AI_LOCKED_MESSAGE =
+  "AI is a premium feature and require to be unlocked for you to use it.";
 
 const roleOptions = [
   { label: "All", value: "" },
@@ -61,6 +65,20 @@ const editableRoles = [
   "SUPER_ADMIN",
 ];
 
+const ROLE_LABELS = {
+  SUPER_ADMIN: "Admin",
+  HOSPITAL_ADMIN: "Hospital Admin",
+  PHARMACY_ADMIN: "Pharmacy Admin",
+  PATIENT: "Patient",
+  MEDIC: "Medic",
+};
+
+const formatRoleLabel = (role) => {
+  const normalized = String(role || "").trim().toUpperCase();
+  if (!normalized) return "User";
+  return ROLE_LABELS[normalized] || normalized.replace(/_/g, " ");
+};
+
 export default function AdminUsersScreen() {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useAppTheme();
@@ -69,6 +87,7 @@ export default function AdminUsersScreen() {
   const router = useRouter();
   const { initiateCall } = useVideoCall();
   const { isUserOnline } = useOnlineUsers();
+  const { auth } = useAuthStore();
 
   const getParam = (value, fallback = "") => {
     if (Array.isArray(value)) {
@@ -213,6 +232,13 @@ export default function AdminUsersScreen() {
         pageSize,
       }),
   });
+  const aiSettingsQuery = useQuery({
+    queryKey: ["ai-settings", "admin-users"],
+    queryFn: () => apiClient.aiGetSettings(),
+    enabled: Boolean(auth?.token || auth?.jwt || auth?.accessToken),
+  });
+  const aiCanUse = aiSettingsQuery.isSuccess ? Boolean(aiSettingsQuery.data?.canUse) : true;
+  const aiBlockedMessage = String(aiSettingsQuery.data?.blockedReason || AI_LOCKED_MESSAGE);
 
   const usersResponse = usersQuery.data || {};
   const users = Array.isArray(usersResponse)
@@ -376,6 +402,10 @@ export default function AdminUsersScreen() {
   });
 
   const runAiSearchFromText = () => {
+    if (!aiCanUse) {
+      showToast(aiBlockedMessage, "warning");
+      return;
+    }
     const queryText = String(search || "").trim();
     if (!queryText) {
       showToast("Type what user you want to find first.", "warning");
@@ -455,6 +485,10 @@ export default function AdminUsersScreen() {
   };
 
   const toggleVoiceSearch = async () => {
+    if (!aiCanUse) {
+      showToast(aiBlockedMessage, "warning");
+      return;
+    }
     if (sttVoiceSearchMutation.isPending || aiUserSearchMutation.isPending) return;
     if (Platform.OS === "web") {
       if (isVoiceRecording) {
@@ -924,7 +958,7 @@ export default function AdminUsersScreen() {
           <View style={{ flexDirection: "row", gap: 8, marginTop: 10, width: "100%" }}>
             <TouchableOpacity
               onPress={runAiSearchFromText}
-              disabled={aiUserSearchMutation.isPending || sttVoiceSearchMutation.isPending}
+              disabled={!aiCanUse || aiUserSearchMutation.isPending || sttVoiceSearchMutation.isPending}
               style={{
                 flex: 1,
                 height: 38,
@@ -934,7 +968,9 @@ export default function AdminUsersScreen() {
                 flexDirection: "row",
                 backgroundColor: theme.primary,
                 opacity:
-                  aiUserSearchMutation.isPending || sttVoiceSearchMutation.isPending ? 0.7 : 1,
+                  !aiCanUse || aiUserSearchMutation.isPending || sttVoiceSearchMutation.isPending
+                    ? 0.7
+                    : 1,
               }}
             >
               <Sparkles color="#fff" size={14} />
@@ -951,7 +987,7 @@ export default function AdminUsersScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={toggleVoiceSearch}
-              disabled={sttVoiceSearchMutation.isPending || aiUserSearchMutation.isPending}
+              disabled={!aiCanUse || sttVoiceSearchMutation.isPending || aiUserSearchMutation.isPending}
               style={{
                 width: 46,
                 height: 38,
@@ -962,12 +998,27 @@ export default function AdminUsersScreen() {
                 borderColor: isVoiceRecording ? theme.error : theme.border,
                 backgroundColor: isVoiceRecording ? `${theme.error}22` : theme.card,
                 opacity:
-                  sttVoiceSearchMutation.isPending || aiUserSearchMutation.isPending ? 0.7 : 1,
+                  !aiCanUse || sttVoiceSearchMutation.isPending || aiUserSearchMutation.isPending
+                    ? 0.7
+                    : 1,
               }}
             >
               <Mic color={isVoiceRecording ? theme.error : theme.iconColor} size={16} />
             </TouchableOpacity>
           </View>
+          {!aiCanUse && (
+            <Text
+              style={{
+                marginTop: 8,
+                width: "100%",
+                color: theme.textSecondary,
+                fontSize: 11,
+                fontFamily: "Inter_500Medium",
+              }}
+            >
+              {AI_LOCKED_MESSAGE}
+            </Text>
+          )}
           {(sttVoiceSearchMutation.isPending || isVoiceRecording) && (
             <Text
               style={{
@@ -1656,7 +1707,7 @@ export default function AdminUsersScreen() {
                   dropdownIconColor={theme.text}
                 >
                   {editableRoles.map((role) => (
-                    <Picker.Item key={role} label={role} value={role} />
+                    <Picker.Item key={role} label={formatRoleLabel(role)} value={role} />
                   ))}
                 </Picker>
               </View>
@@ -1884,7 +1935,7 @@ export default function AdminUsersScreen() {
                   }}
                 />
                 <Text style={{ flex: 1, fontSize: 11, color: theme.textSecondary }}>
-                  {user.role}
+                  {formatRoleLabel(user.role)}
                 </Text>
                 <Text style={{ flex: 1, fontSize: 11, color: theme.textSecondary }}>
                   {user.location || "--"}
@@ -2058,7 +2109,7 @@ export default function AdminUsersScreen() {
                           dropdownIconColor={theme.text}
                         >
                           {editableRoles.map((role) => (
-                            <Picker.Item key={role} label={role} value={role} />
+                            <Picker.Item key={role} label={formatRoleLabel(role)} value={role} />
                           ))}
                         </Picker>
                       </View>
@@ -2148,7 +2199,7 @@ export default function AdminUsersScreen() {
               user.lastName,
               user.email,
               user.phone,
-              user.role,
+              formatRoleLabel(user.role),
               user.location || "",
               user.licenseNumber || "",
               user.verified ? "Yes" : "No",
@@ -2208,7 +2259,7 @@ export default function AdminUsersScreen() {
               user.lastName,
               user.email,
               user.phone,
-              user.role,
+              formatRoleLabel(user.role),
               user.location || "",
               user.licenseNumber || "",
               user.verified ? "Yes" : "No",

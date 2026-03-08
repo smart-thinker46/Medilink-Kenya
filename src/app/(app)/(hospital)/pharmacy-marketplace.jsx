@@ -9,7 +9,7 @@ import {
   Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -29,6 +29,7 @@ import { resolveMediaUrl } from "@/utils/media";
 
 export default function HospitalPharmacyMarketplaceScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useAppTheme();
   const { showToast } = useToast();
@@ -40,8 +41,16 @@ export default function HospitalPharmacyMarketplaceScreen() {
   const [paymentMethod, setPaymentMethod] = useState("intasend");
   const [phoneNumber, setPhoneNumber] = useState(auth?.user?.phone || "");
 
+  const pharmacyIdParam = Array.isArray(params?.pharmacyId)
+    ? params.pharmacyId[0]
+    : params?.pharmacyId;
+  const scopedPharmacyId =
+    typeof pharmacyIdParam === "string" && pharmacyIdParam.trim().length > 0
+      ? pharmacyIdParam.trim()
+      : "";
+
   const marketplaceQuery = useQuery({
-    queryKey: ["hospital-pharmacy-marketplace", searchQuery],
+    queryKey: ["hospital-pharmacy-marketplace", searchQuery, scopedPharmacyId],
     queryFn: () =>
       apiClient.getPharmacyMarketplace({
         search: searchQuery || undefined,
@@ -70,6 +79,13 @@ export default function HospitalPharmacyMarketplaceScreen() {
       ),
     }));
   }, [marketplaceQuery.data]);
+  const visibleProducts = useMemo(
+    () =>
+      scopedPharmacyId
+        ? products.filter((product) => String(product.pharmacyId || "") === scopedPharmacyId)
+        : products,
+    [products, scopedPharmacyId],
+  );
 
   const trackMarketplaceEvent = (pharmacyId, type, payload = {}) => {
     if (!pharmacyId || !type) return;
@@ -262,6 +278,23 @@ export default function HospitalPharmacyMarketplaceScreen() {
             style={{ color: theme.text }}
           />
         </View>
+        {scopedPharmacyId ? (
+          <View
+            style={{
+              backgroundColor: `${theme.primary}15`,
+              borderColor: `${theme.primary}44`,
+              borderWidth: 1,
+              borderRadius: 12,
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+              marginBottom: 12,
+            }}
+          >
+            <Text style={{ fontSize: 12, color: theme.primary, fontFamily: "Inter_600SemiBold" }}>
+              Pharmacy scope is active for this view.
+            </Text>
+          </View>
+        ) : null}
 
         {marketplaceQuery.isLoading ? (
           <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
@@ -269,7 +302,7 @@ export default function HospitalPharmacyMarketplaceScreen() {
           </View>
         ) : (
           <FlatList
-            data={products}
+            data={visibleProducts}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingBottom: 180 }}
             renderItem={({ item }) => {

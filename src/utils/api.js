@@ -344,6 +344,10 @@ class ApiClient {
     return this.client.get("/users/linked-locations");
   }
 
+  async getMapDiscovery(params = {}) {
+    return this.client.get("/users/map-discovery", { params });
+  }
+
   async getPatientDashboard(params = {}) {
     return this.client.get("/users/patient-dashboard", { params });
   }

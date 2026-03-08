@@ -35,6 +35,20 @@ const templateOptions = [
 const getAudienceLabel = (audience) =>
   audienceOptions.find((option) => option.value === audience)?.label || "Users";
 
+const ROLE_LABELS = {
+  SUPER_ADMIN: "Admin",
+  HOSPITAL_ADMIN: "Hospital Admin",
+  PHARMACY_ADMIN: "Pharmacy Admin",
+  PATIENT: "Patient",
+  MEDIC: "Medic",
+};
+
+const formatRoleLabel = (role) => {
+  const normalized = String(role || "").trim().toUpperCase();
+  if (!normalized) return "User";
+  return ROLE_LABELS[normalized] || normalized.replace(/_/g, " ");
+};
+
 const buildTemplate = ({ templateId, audience, selectedUser }) => {
   const recipientName =
     selectedUser?.fullName ||
@@ -564,7 +578,7 @@ export default function AdminEmailCenterScreen() {
                         fontSize: 11,
                       }}
                     >
-                      {user.email} • {user.role || "USER"}
+                      {user.email} • {formatRoleLabel(user.role)}
                     </Text>
                   </TouchableOpacity>
                 ))}

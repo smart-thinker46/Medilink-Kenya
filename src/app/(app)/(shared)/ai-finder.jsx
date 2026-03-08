@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import { useAppTheme } from "@/components/ThemeProvider";
 import { useToast } from "@/components/ToastProvider";
 import { useAuthStore } from "@/utils/auth/store";
 import apiClient from "@/utils/api";
+import useAiSpeechPlayer from "@/utils/useAiSpeechPlayer";
 
 const SCOPES = [
   {
@@ -43,6 +44,26 @@ const SCOPES = [
 
 const emptyIfNotArray = (value) => (Array.isArray(value) ? value : []);
 
+const getTimeGreeting = (date = new Date()) => {
+  const hour = Number(date.getHours() || 0);
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  if (hour < 22) return "Good evening";
+  return "Hello";
+};
+
+const resolveDisplayName = (user) => {
+  const fullName =
+    String(user?.fullName || user?.name || user?.firstName || "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)[0] || "";
+  if (fullName) return fullName;
+  const email = String(user?.email || "").trim();
+  if (!email.includes("@")) return "";
+  return email.split("@")[0];
+};
+
 export default function AiFinderScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -65,8 +86,49 @@ export default function AiFinderScreen() {
     queryFn: () => apiClient.aiGetSettings(),
   });
   const canUseAi = Boolean(aiSettingsQuery.data?.canUse);
+  const isPremium = Boolean(aiSettingsQuery.data?.isPremium);
   const blockedReason = String(aiSettingsQuery.data?.blockedReason || "");
   const role = String(auth?.user?.role || "").toUpperCase();
+  const displayName = useMemo(() => resolveDisplayName(auth?.user), [auth?.user]);
+  const hasRedirectedToPaymentRef = useRef(false);
+  const hasPlayedGreetingRef = useRef(false);
+
+  const { speak: speakGreeting, stop: stopGreeting } = useAiSpeechPlayer({
+    preferDeviceSpeech: true,
+  });
+
+  useEffect(() => {
+    return () => {
+      stopGreeting().catch(() => undefined);
+    };
+  }, [stopGreeting]);
+
+  useEffect(() => {
+    if (!aiSettingsQuery.isSuccess) return;
+    if (canUseAi) return;
+    if (isPremium) return;
+    if (hasRedirectedToPaymentRef.current) return;
+    hasRedirectedToPaymentRef.current = true;
+    showToast("AI is a premium feature. Complete payment to continue.", "info");
+    router.replace({
+      pathname: "/(app)/(shared)/subscription-checkout",
+      params: { role },
+    });
+  }, [aiSettingsQuery.isSuccess, canUseAi, isPremium, role, router, showToast]);
+
+  useEffect(() => {
+    if (!aiSettingsQuery.isSuccess || !canUseAi) return;
+    if (hasPlayedGreetingRef.current) return;
+    hasPlayedGreetingRef.current = true;
+    const greeting = getTimeGreeting();
+    const introText = [
+      `${greeting}${displayName ? `, ${displayName}` : ""}.`,
+      "Hi. I am Medilink AI.",
+      "I help you find medicines, pharmacies, and medics quickly using text or voice.",
+      "Please describe what you want me to find.",
+    ].join(" ");
+    speakGreeting(introText);
+  }, [aiSettingsQuery.isSuccess, canUseAi, displayName, speakGreeting]);
 
   React.useEffect(() => {
     return () => {

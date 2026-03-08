@@ -1,5 +1,14 @@
 import React, { useMemo, useState } from "react";
-import { ActivityIndicator, View, Text, ScrollView, TouchableOpacity, TextInput, useWindowDimensions } from "react-native";
+import {
+  ActivityIndicator,
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  useWindowDimensions,
+  Platform,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { usePathname, useRouter } from "expo-router";
@@ -20,7 +29,9 @@ import {
   MessageCircle,
   ShieldAlert,
   Volume2,
+  Mic,
 } from "lucide-react-native";
+import { useAudioRecorder, RecordingPresets } from "expo-audio";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -96,6 +107,33 @@ export default function AdminOverviewScreen() {
   const [aiEmailDraftResponse, setAiEmailDraftResponse] = useState(null);
   const [helpDeskQuery, setHelpDeskQuery] = useState("");
   const [helpDeskResponse, setHelpDeskResponse] = useState(null);
+  const [isHelpDeskVoiceRecording, setIsHelpDeskVoiceRecording] = useState(false);
+  const helpDeskAudioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const helpDeskWebMediaRecorderRef = React.useRef(null);
+  const helpDeskWebMediaStreamRef = React.useRef(null);
+  const helpDeskWebAudioChunksRef = React.useRef([]);
+
+  const normalizeUserFilterParams = (params = {}) => {
+    const source = params || {};
+    const normalized = { ...source };
+    if (typeof source.subscriptionActive === "boolean" && typeof source.active !== "boolean") {
+      normalized.active = source.subscriptionActive;
+    }
+    if (typeof normalized.active === "boolean") {
+      normalized.active = normalized.active ? "true" : "false";
+    }
+    if (typeof normalized.online === "boolean") {
+      normalized.online = normalized.online ? "true" : "false";
+    }
+    if (normalized.role) {
+      normalized.role = String(normalized.role).toUpperCase();
+    }
+    if (normalized.status) {
+      normalized.status = String(normalized.status).toLowerCase();
+    }
+    delete normalized.subscriptionActive;
+    return normalized;
+  };
 
   const buildRouteWithParams = (target, params = {}) => {
     const base = String(target || "").trim();
@@ -118,11 +156,33 @@ export default function AdminOverviewScreen() {
       const type = String(action?.type || "").toUpperCase();
       try {
         if (type === "OPEN_SCREEN") {
-          const route = buildRouteWithParams(action?.target, action?.params || {});
+          const target = String(action?.target || action?.route || "").trim();
+          const rawParams = action?.params || {};
+          const params =
+            target.includes("/(app)/(admin)/users")
+              ? {
+                  ...normalizeUserFilterParams(rawParams),
+                  ...(String(rawParams?.search || "").trim() ? {} : { search: action?.query || "" }),
+                }
+              : rawParams;
+          const route = buildRouteWithParams(target, params);
           if (route) {
             router.push(route);
             reports.push(`Opened ${route}`);
+          } else {
+            reports.push("No route provided for OPEN_SCREEN action.");
           }
+          continue;
+        }
+
+        if (type === "SEARCH_USERS" || type === "OPEN_USERS") {
+          const params = {
+            ...normalizeUserFilterParams(action?.filters || action?.params || {}),
+            ...(String(action?.query || "").trim() ? { search: String(action.query).trim() } : {}),
+          };
+          const route = buildRouteWithParams("/(app)/(admin)/users", params);
+          router.push(route);
+          reports.push(`Opened ${route}`);
           continue;
         }
 
@@ -182,6 +242,8 @@ export default function AdminOverviewScreen() {
           reports.push(Boolean(action?.enabled) ? "AI enabled." : "AI disabled.");
           continue;
         }
+
+        reports.push(`Skipped unsupported action: ${type || "UNKNOWN"}.`);
       } catch (error) {
         reports.push(String(error?.message || `Failed action: ${type}`));
       }
@@ -242,8 +304,15 @@ export default function AdminOverviewScreen() {
       }),
     onSuccess: async (data, variables) => {
       let executionReports = [];
-      if (variables?.execute) {
-        executionReports = await runHelpDeskActions(data?.actions || []);
+      const actionList = Array.isArray(data?.actions) ? data.actions : [];
+      const actionsToRun = variables?.execute
+        ? actionList
+        : actionList.filter((action) => {
+            const type = String(action?.type || "").toUpperCase();
+            return type === "OPEN_SCREEN" || type === "OPEN_USERS" || type === "SEARCH_USERS";
+          });
+      if (actionsToRun.length) {
+        executionReports = await runHelpDeskActions(actionsToRun);
       }
       setHelpDeskResponse({
         ...(data || {}),
@@ -262,6 +331,180 @@ export default function AdminOverviewScreen() {
       showToast(error?.message || "AI help desk failed.", "error");
     },
   });
+
+  React.useEffect(() => {
+    return () => {
+      if (isHelpDeskVoiceRecording) {
+        helpDeskAudioRecorder.stop().catch(() => undefined);
+      }
+      try {
+        if (helpDeskWebMediaRecorderRef.current?.state === "recording") {
+          helpDeskWebMediaRecorderRef.current.stop();
+        }
+      } catch {
+        // ignore cleanup errors
+      }
+      const stream = helpDeskWebMediaStreamRef.current;
+      if (stream?.getTracks) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, [helpDeskAudioRecorder, isHelpDeskVoiceRecording]);
+
+  const helpDeskVoiceToTextMutation = useMutation({
+    mutationFn: (input) => {
+      if (Platform.OS === "web") {
+        if (typeof Blob !== "undefined" && input instanceof Blob) {
+          return apiClient.aiVoiceStt({
+            file: input,
+            name: "admin-helpdesk.webm",
+            type: input.type || "audio/webm",
+            language: "en",
+          });
+        }
+        throw new Error("Web voice recording is missing.");
+      }
+      const uri = String(input || "").trim();
+      if (!uri) {
+        throw new Error("Audio recording not found.");
+      }
+      return apiClient.aiVoiceStt({
+        uri,
+        name: "admin-helpdesk.m4a",
+        type: "audio/m4a",
+        language: "en",
+      });
+    },
+    onSuccess: (data) => {
+      const transcript = String(data?.text || "").trim();
+      if (!transcript) {
+        showToast("No speech transcript returned.", "warning");
+        return;
+      }
+      setHelpDeskQuery(transcript);
+      aiHelpDeskMutation.mutate({ query: transcript, execute: true });
+    },
+    onError: (error) => {
+      showToast(error?.message || "Voice transcription failed.", "error");
+    },
+  });
+
+  const stopHelpDeskWebRecorder = async () => {
+    const recorder = helpDeskWebMediaRecorderRef.current;
+    if (!recorder) {
+      throw new Error("Recorder not initialized.");
+    }
+    const stream = helpDeskWebMediaStreamRef.current;
+    return new Promise((resolve, reject) => {
+      recorder.onstop = () => {
+        try {
+          const audioBlob = new Blob(helpDeskWebAudioChunksRef.current || [], {
+            type: recorder.mimeType || "audio/webm",
+          });
+          helpDeskWebAudioChunksRef.current = [];
+          helpDeskWebMediaRecorderRef.current = null;
+          if (stream?.getTracks) {
+            stream.getTracks().forEach((track) => track.stop());
+          }
+          helpDeskWebMediaStreamRef.current = null;
+          resolve(audioBlob);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      recorder.onerror = () => reject(new Error("Web recorder failed."));
+      try {
+        recorder.stop();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+
+  const startHelpDeskWebRecorder = async () => {
+    const mediaDevices = globalThis?.navigator?.mediaDevices;
+    const MediaRecorderApi = globalThis?.MediaRecorder;
+    if (!mediaDevices?.getUserMedia || !MediaRecorderApi) {
+      throw new Error("Browser voice recording is not supported.");
+    }
+    const stream = await mediaDevices.getUserMedia({ audio: true });
+    helpDeskWebMediaStreamRef.current = stream;
+    const mimeCandidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
+    const selectedMime = mimeCandidates.find((mime) => {
+      try {
+        return typeof MediaRecorderApi.isTypeSupported === "function"
+          ? MediaRecorderApi.isTypeSupported(mime)
+          : false;
+      } catch {
+        return false;
+      }
+    });
+    const recorder = selectedMime
+      ? new MediaRecorderApi(stream, { mimeType: selectedMime })
+      : new MediaRecorderApi(stream);
+    helpDeskWebAudioChunksRef.current = [];
+    recorder.ondataavailable = (event) => {
+      if (event?.data && event.data.size > 0) {
+        helpDeskWebAudioChunksRef.current.push(event.data);
+      }
+    };
+    recorder.start();
+    helpDeskWebMediaRecorderRef.current = recorder;
+  };
+
+  const toggleHelpDeskVoice = async () => {
+    if (helpDeskVoiceToTextMutation.isPending || aiHelpDeskMutation.isLoading) return;
+
+    if (Platform.OS === "web") {
+      if (isHelpDeskVoiceRecording) {
+        try {
+          const audioBlob = await stopHelpDeskWebRecorder();
+          setIsHelpDeskVoiceRecording(false);
+          helpDeskVoiceToTextMutation.mutate(audioBlob);
+        } catch (error) {
+          setIsHelpDeskVoiceRecording(false);
+          showToast(error?.message || "Failed to stop web voice recording.", "error");
+        }
+        return;
+      }
+      try {
+        await startHelpDeskWebRecorder();
+        setIsHelpDeskVoiceRecording(true);
+        showToast("Listening... click mic again to stop.", "info");
+      } catch (error) {
+        setIsHelpDeskVoiceRecording(false);
+        showToast(error?.message || "Unable to start web voice recording.", "error");
+      }
+      return;
+    }
+
+    if (isHelpDeskVoiceRecording) {
+      try {
+        const recorded = await helpDeskAudioRecorder.stop();
+        setIsHelpDeskVoiceRecording(false);
+        const uri = String(recorded?.uri || "").trim();
+        if (!uri) {
+          showToast("No recording captured. Try again.", "warning");
+          return;
+        }
+        helpDeskVoiceToTextMutation.mutate(uri);
+      } catch (error) {
+        setIsHelpDeskVoiceRecording(false);
+        showToast(error?.message || "Failed to stop recording.", "error");
+      }
+      return;
+    }
+
+    try {
+      await helpDeskAudioRecorder.prepareToRecordAsync();
+      helpDeskAudioRecorder.record();
+      setIsHelpDeskVoiceRecording(true);
+      showToast("Listening... tap mic again to stop.", "info");
+    } catch (error) {
+      setIsHelpDeskVoiceRecording(false);
+      showToast(error?.message || "Unable to start voice recording.", "error");
+    }
+  };
 
   const aiSuggestedFilters = aiUserResponse?.suggestedFilters || {};
   const aiSuggestedQueryParams = useMemo(() => {
@@ -905,14 +1148,25 @@ export default function AdminOverviewScreen() {
             <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
               <TouchableOpacity
                 onPress={() => aiHelpDeskMutation.mutate({ query: helpDeskQuery.trim(), execute: false })}
-                disabled={!aiCanUse || !helpDeskQuery.trim() || aiHelpDeskMutation.isLoading}
+                disabled={
+                  !aiCanUse ||
+                  !helpDeskQuery.trim() ||
+                  aiHelpDeskMutation.isLoading ||
+                  helpDeskVoiceToTextMutation.isPending
+                }
                 style={{
                   flex: 1,
                   borderRadius: 10,
                   paddingVertical: 10,
                   alignItems: "center",
                   backgroundColor: theme.primary,
-                  opacity: !aiCanUse || !helpDeskQuery.trim() ? 0.6 : 1,
+                  opacity:
+                    !aiCanUse ||
+                    !helpDeskQuery.trim() ||
+                    aiHelpDeskMutation.isLoading ||
+                    helpDeskVoiceToTextMutation.isPending
+                      ? 0.6
+                      : 1,
                 }}
               >
                 {aiHelpDeskMutation.isLoading ? (
@@ -925,21 +1179,58 @@ export default function AdminOverviewScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => aiHelpDeskMutation.mutate({ query: helpDeskQuery.trim(), execute: true })}
-                disabled={!aiCanUse || !helpDeskQuery.trim() || aiHelpDeskMutation.isLoading}
+                disabled={
+                  !aiCanUse ||
+                  !helpDeskQuery.trim() ||
+                  aiHelpDeskMutation.isLoading ||
+                  helpDeskVoiceToTextMutation.isPending
+                }
                 style={{
                   flex: 1,
                   borderRadius: 10,
                   paddingVertical: 10,
                   alignItems: "center",
                   backgroundColor: theme.success,
-                  opacity: !aiCanUse || !helpDeskQuery.trim() ? 0.6 : 1,
+                  opacity:
+                    !aiCanUse ||
+                    !helpDeskQuery.trim() ||
+                    aiHelpDeskMutation.isLoading ||
+                    helpDeskVoiceToTextMutation.isPending
+                      ? 0.6
+                      : 1,
                 }}
               >
                 <Text style={{ fontSize: 12, color: "#fff", fontFamily: "Inter_600SemiBold" }}>
                   Auto-Run Task
                 </Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                onPress={toggleHelpDeskVoice}
+                disabled={!aiCanUse || aiHelpDeskMutation.isLoading || helpDeskVoiceToTextMutation.isPending}
+                style={{
+                  width: 48,
+                  borderRadius: 10,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderWidth: 1,
+                  borderColor: isHelpDeskVoiceRecording ? theme.error : theme.border,
+                  backgroundColor: isHelpDeskVoiceRecording ? `${theme.error}1A` : theme.card,
+                  opacity:
+                    !aiCanUse || aiHelpDeskMutation.isLoading || helpDeskVoiceToTextMutation.isPending
+                      ? 0.6
+                      : 1,
+                }}
+              >
+                <Mic color={isHelpDeskVoiceRecording ? theme.error : theme.iconColor} size={16} />
+              </TouchableOpacity>
             </View>
+            {(isHelpDeskVoiceRecording || helpDeskVoiceToTextMutation.isPending) && (
+              <Text style={{ marginTop: 8, fontSize: 11, color: theme.textSecondary }}>
+                {isHelpDeskVoiceRecording
+                  ? "Recording voice command..."
+                  : "Transcribing and executing task..."}
+              </Text>
+            )}
 
             {helpDeskResponse ? (
               <View

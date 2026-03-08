@@ -8,6 +8,7 @@ import { ArrowLeft } from "lucide-react-native";
 import LeafletMap from "@/components/LeafletMap";
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
+import { useToast } from "@/components/ToastProvider";
 import apiClient from "@/utils/api";
 import {
   getDistanceKm,
@@ -21,19 +22,24 @@ const MAP_TYPES = [
   { id: "satellite", label: "Satellite" },
   { id: "terrain", label: "Terrain" },
 ];
+
 const NEARBY_RADIUS_KM = 35;
-const WEEK_DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+const normalizeRole = (role) => String(role || "").trim().toUpperCase();
 
 export default function NearbyMapScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { theme, isDark, batterySaver, refreshInterval } = useAppTheme();
+  const { theme, batterySaver, refreshInterval } = useAppTheme();
+  const { showToast } = useToast();
   const { isUserOnline } = useOnlineUsers();
   const [liveUpdates, setLiveUpdates] = useState(true);
   const [trailById, setTrailById] = useState({});
   const [mapType, setMapType] = useState("standard");
   const [showLinkedUsers, setShowLinkedUsers] = useState(true);
   const [showMedics, setShowMedics] = useState(true);
+  const [showPharmacies, setShowPharmacies] = useState(true);
+  const [showHospitals, setShowHospitals] = useState(true);
   const [nearbyOnly, setNearbyOnly] = useState(true);
   const [availableOnly, setAvailableOnly] = useState(true);
 
@@ -41,68 +47,47 @@ export default function NearbyMapScreen() {
   const effectiveInterval = refreshInterval || 15000;
 
   const myLocationQuery = useQuery({
-    queryKey: ["my-location"],
+    queryKey: ["my-location", "nearby-map"],
     queryFn: () => apiClient.getMyLocation(),
   });
   const linkedQuery = useQuery({
-    queryKey: ["linked-locations"],
+    queryKey: ["linked-locations", "nearby-map"],
     queryFn: () => apiClient.getLinkedLocations(),
     refetchInterval: effectiveLiveUpdates ? effectiveInterval : false,
   });
-  const medicsQuery = useQuery({
-    queryKey: ["medics", "nearby-map"],
-    queryFn: () => apiClient.getMedics({ limit: 200 }),
+  const discoveryQuery = useQuery({
+    queryKey: ["map-discovery", "nearby-map"],
+    queryFn: () =>
+      apiClient.getMapDiscovery({
+        include: "medic,pharmacy,hospital",
+      }),
     refetchInterval: effectiveLiveUpdates ? effectiveInterval : false,
   });
+
   const myLocation = useMemo(
     () => normalizeLocation(myLocationQuery.data?.location),
     [myLocationQuery.data],
   );
-  const today = WEEK_DAYS[new Date().getDay()];
+
   const linked = useMemo(
     () =>
       (linkedQuery.data || [])
         .map((item) => ({
           ...item,
           location: normalizeLocation(item.location),
+          role: normalizeRole(item.role),
         }))
         .filter((item) => !!item.location),
     [linkedQuery.data],
   );
-  const medics = useMemo(() => {
-    const raw = medicsQuery.data?.items || medicsQuery.data || [];
-    return raw
-      .map((medic) => {
-        const latCandidate = Number(
-          medic?.locationLat ??
-            medic?.locationCoordinates?.lat ??
-            medic?.location?.lat ??
-            medic?.location?.latitude,
-        );
-        const lngCandidate = Number(
-          medic?.locationLng ??
-            medic?.locationCoordinates?.lng ??
-            medic?.location?.lng ??
-            medic?.location?.longitude,
-        );
-        const location =
-          Number.isFinite(latCandidate) && Number.isFinite(lngCandidate)
-            ? normalizeLocation({
-                latitude: latCandidate,
-                longitude: lngCandidate,
-                address: medic?.locationAddress || medic?.location?.address || medic?.location || "",
-              })
-            : null;
-        const availabilityDays = Array.isArray(medic?.availabilityDays)
-          ? medic.availabilityDays
-          : Array.isArray(medic?.workingDays)
-            ? medic.workingDays
-            : [];
-        const availableToday = availabilityDays.some(
-          (day) => String(day || "").toLowerCase().trim() === today,
-        );
-        const online = isUserOnline(medic);
-        const availableNow = online || availableToday;
+
+  const discovery = useMemo(() => {
+    const rows = discoveryQuery.data?.items || [];
+    return rows
+      .map((entity) => {
+        const role = normalizeRole(entity?.role);
+        const location = normalizeLocation(entity?.location);
+        if (!location) return null;
         const distanceKm =
           myLocation && location
             ? getDistanceKm(
@@ -116,27 +101,32 @@ export default function NearbyMapScreen() {
                 },
               )
             : null;
+        const online = isUserOnline(entity);
         const isNear = distanceKm === null ? true : distanceKm <= NEARBY_RADIUS_KM;
         return {
-          ...medic,
+          ...entity,
+          role,
           location,
-          availabilityDays,
-          availableNow,
+          online,
           isNear,
           distanceKm,
-          online,
+          availableNow: role === "MEDIC" ? online : true,
         };
       })
-      .filter((medic) => medic.location);
-  }, [isUserOnline, medicsQuery.data, myLocation, today]);
-  const filteredMedics = useMemo(
+      .filter(Boolean);
+  }, [discoveryQuery.data, isUserOnline, myLocation]);
+
+  const visibleDiscovery = useMemo(
     () =>
-      medics.filter((medic) => {
-        if (availableOnly && !medic.availableNow) return false;
-        if (nearbyOnly && !medic.isNear) return false;
+      discovery.filter((entity) => {
+        if (entity.role === "MEDIC" && !showMedics) return false;
+        if (entity.role === "PHARMACY_ADMIN" && !showPharmacies) return false;
+        if (entity.role === "HOSPITAL_ADMIN" && !showHospitals) return false;
+        if (nearbyOnly && !entity.isNear) return false;
+        if (availableOnly && entity.role === "MEDIC" && !entity.availableNow) return false;
         return true;
       }),
-    [availableOnly, medics, nearbyOnly],
+    [availableOnly, discovery, nearbyOnly, showHospitals, showMedics, showPharmacies],
   );
 
   useEffect(() => {
@@ -170,17 +160,17 @@ export default function NearbyMapScreen() {
         longitudeDelta: 0.2,
       };
     }
-    const first = linked.find(
+    const firstLinked = linked.find(
       (item) =>
         Number.isFinite(Number(item.location?.latitude)) &&
         Number.isFinite(Number(item.location?.longitude)),
     );
-    const firstMedic = filteredMedics.find(
+    const firstDiscovery = visibleDiscovery.find(
       (item) =>
         Number.isFinite(Number(item.location?.latitude)) &&
         Number.isFinite(Number(item.location?.longitude)),
     );
-    const fallback = first || firstMedic;
+    const fallback = firstLinked || firstDiscovery;
     if (!fallback) {
       return {
         latitude: -1.2921,
@@ -195,7 +185,8 @@ export default function NearbyMapScreen() {
       latitudeDelta: 0.2,
       longitudeDelta: 0.2,
     };
-  }, [filteredMedics, linked, myLocation]);
+  }, [linked, myLocation, visibleDiscovery]);
+
   const linkedMarkers = useMemo(
     () =>
       linked
@@ -205,7 +196,7 @@ export default function NearbyMapScreen() {
             Number.isFinite(Number(item.location?.longitude)),
         )
         .map((item) => ({
-          id: item.id,
+          id: `linked-${item.id}`,
           latitude: item.location.latitude,
           longitude: item.location.longitude,
           title: item.name || item.role,
@@ -215,33 +206,75 @@ export default function NearbyMapScreen() {
         })),
     [isUserOnline, linked, theme.primary],
   );
-  const medicMarkers = useMemo(
+
+  const discoveryMarkers = useMemo(
     () =>
-      filteredMedics.map((medic) => ({
-        id: `medic-${medic.id || medic.medicId}`,
-        latitude: medic.location.latitude,
-        longitude: medic.location.longitude,
-        title: medic.name || "Medic",
-        description: [
-          medic.specialization || "General",
-          medic.distanceKm !== null && Number.isFinite(medic.distanceKm)
-            ? `${medic.distanceKm.toFixed(1)} km`
+      visibleDiscovery.map((entity) => {
+        const role = normalizeRole(entity.role);
+        const label =
+          role === "MEDIC"
+            ? "M"
+            : role === "PHARMACY_ADMIN"
+              ? "P"
+              : role === "HOSPITAL_ADMIN"
+                ? "H"
+                : "U";
+        const color =
+          role === "MEDIC"
+            ? entity.availableNow
+              ? "#22C55E"
+              : "#F59E0B"
+            : role === "PHARMACY_ADMIN"
+              ? "#2563EB"
+              : role === "HOSPITAL_ADMIN"
+                ? "#0EA5A4"
+                : theme.primary;
+        const description = [
+          role === "MEDIC" ? entity.specialization || "General practice" : null,
+          entity.distanceKm !== null && Number.isFinite(entity.distanceKm)
+            ? `${entity.distanceKm.toFixed(1)} km`
             : null,
-          medic.availableNow ? "Available now" : "Currently unavailable",
+          getLocationAddressLabel(entity.location),
         ]
           .filter(Boolean)
-          .join(" • "),
-        color: medic.availableNow ? "#22C55E" : "#F59E0B",
-        label: "M",
-      })),
-    [filteredMedics],
+          .join(" • ");
+        return {
+          id: `discovery-${entity.userId}`,
+          latitude: entity.location.latitude,
+          longitude: entity.location.longitude,
+          title: entity.name || "Provider",
+          description,
+          color,
+          label,
+        };
+      }),
+    [theme.primary, visibleDiscovery],
   );
+
+  const markerLookup = useMemo(() => {
+    const map = new Map();
+    linked.forEach((item) => {
+      map.set(`linked-${item.id}`, {
+        type: "linked",
+        item,
+      });
+    });
+    discovery.forEach((item) => {
+      map.set(`discovery-${item.userId}`, {
+        type: "discovery",
+        item,
+      });
+    });
+    return map;
+  }, [discovery, linked]);
+
   const markers = useMemo(() => {
     const merged = [];
     if (showLinkedUsers) merged.push(...linkedMarkers);
-    if (showMedics) merged.push(...medicMarkers);
+    merged.push(...discoveryMarkers);
     return merged;
-  }, [linkedMarkers, medicMarkers, showLinkedUsers, showMedics]);
+  }, [discoveryMarkers, linkedMarkers, showLinkedUsers]);
+
   const polylines = useMemo(
     () =>
       Object.entries(trailById)
@@ -254,6 +287,35 @@ export default function NearbyMapScreen() {
         })),
     [theme.primary, trailById],
   );
+
+  const handleMarkerPress = (payload) => {
+    const markerId = String(payload?.markerId || "").trim();
+    if (!markerId) return;
+    const match = markerLookup.get(markerId);
+    if (!match) return;
+    const item = match.item || {};
+    const role = normalizeRole(item.role);
+    if (!["MEDIC", "PHARMACY_ADMIN", "HOSPITAL_ADMIN"].includes(role)) {
+      showToast("Profile for this marker is not available.", "warning");
+      return;
+    }
+    router.push({
+      pathname: "/(app)/(shared)/entity-profile",
+      params: {
+        userId: String(item.userId || item.id || ""),
+        role,
+      },
+    });
+  };
+
+  const isLoading =
+    linkedQuery.isLoading ||
+    discoveryQuery.isLoading ||
+    myLocationQuery.isLoading;
+
+  const medicCount = visibleDiscovery.filter((item) => item.role === "MEDIC").length;
+  const pharmacyCount = visibleDiscovery.filter((item) => item.role === "PHARMACY_ADMIN").length;
+  const hospitalCount = visibleDiscovery.filter((item) => item.role === "HOSPITAL_ADMIN").length;
 
   return (
     <ScreenLayout>
@@ -282,9 +344,10 @@ export default function NearbyMapScreen() {
             <ArrowLeft color={theme.text} size={20} />
           </TouchableOpacity>
           <Text style={{ fontSize: 20, fontFamily: "Nunito_700Bold", color: theme.text }}>
-            Nearby Medics & Users
+            Nearby Providers & Facilities
           </Text>
         </View>
+
         <View
           style={{
             flexDirection: "row",
@@ -305,10 +368,9 @@ export default function NearbyMapScreen() {
             trackColor={{ true: `${theme.primary}66`, false: theme.border }}
           />
         </View>
+
         <View style={{ paddingHorizontal: 24, marginBottom: 10 }}>
-          <Text style={{ fontSize: 12, color: theme.textSecondary }}>
-            Map style
-          </Text>
+          <Text style={{ fontSize: 12, color: theme.textSecondary }}>Map style</Text>
           <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
             {MAP_TYPES.map((option) => (
               <TouchableOpacity
@@ -337,6 +399,7 @@ export default function NearbyMapScreen() {
             ))}
           </View>
         </View>
+
         <View style={{ paddingHorizontal: 24, marginBottom: 10, flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
           <TouchableOpacity
             onPress={() => setShowLinkedUsers((prev) => !prev)}
@@ -366,6 +429,36 @@ export default function NearbyMapScreen() {
           >
             <Text style={{ fontSize: 11, color: showMedics ? theme.primary : theme.textSecondary }}>
               Medics
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setShowPharmacies((prev) => !prev)}
+            style={{
+              paddingHorizontal: 10,
+              paddingVertical: 7,
+              borderRadius: 999,
+              backgroundColor: showPharmacies ? `${theme.primary}1F` : theme.surface,
+              borderWidth: 1,
+              borderColor: showPharmacies ? theme.primary : theme.border,
+            }}
+          >
+            <Text style={{ fontSize: 11, color: showPharmacies ? theme.primary : theme.textSecondary }}>
+              Pharmacies
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setShowHospitals((prev) => !prev)}
+            style={{
+              paddingHorizontal: 10,
+              paddingVertical: 7,
+              borderRadius: 999,
+              backgroundColor: showHospitals ? `${theme.primary}1F` : theme.surface,
+              borderWidth: 1,
+              borderColor: showHospitals ? theme.primary : theme.border,
+            }}
+          >
+            <Text style={{ fontSize: 11, color: showHospitals ? theme.primary : theme.textSecondary }}>
+              Hospitals
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -399,13 +492,17 @@ export default function NearbyMapScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
         <View style={{ paddingHorizontal: 24, marginBottom: 10 }}>
           <Text style={{ fontSize: 12, color: theme.textSecondary }}>
-            Showing {showMedics ? filteredMedics.length : 0} medics on map
+            Showing {medicCount} medics, {pharmacyCount} pharmacies, {hospitalCount} hospitals
+          </Text>
+          <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 4 }}>
+            Tap a marker to open provider/facility profile and actions.
           </Text>
         </View>
 
-        {linkedQuery.isLoading || medicsQuery.isLoading ? (
+        {isLoading ? (
           <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
             <ActivityIndicator color={theme.primary} />
           </View>
@@ -431,6 +528,7 @@ export default function NearbyMapScreen() {
               polylines={showLinkedUsers ? polylines : []}
               mapType={mapType}
               interactive
+              onMarkerPress={handleMarkerPress}
             />
           </View>
         )}
