@@ -62,6 +62,16 @@ class ApiClient {
       if (!base) return "/api";
       return /\/api$/i.test(base) ? base : `${base}/api`;
     };
+    this.resolveAssetUrl = (assetPath) => {
+      const path = String(assetPath || "").trim();
+      if (!path) return "";
+      if (/^https?:\/\//i.test(path)) return path;
+      const base = String(this.baseUrls?.[0] || "")
+        .replace(/\/+$/, "")
+        .replace(/\/api$/i, "");
+      if (!base) return path;
+      return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+    };
     this.client = axios.create({
       baseURL: this.buildApiBase(this.baseUrls[0]),
       headers: {
@@ -224,9 +234,14 @@ class ApiClient {
       ...headers,
     };
     if (isFormData) {
-      // Force multipart for RN/Expo where axios defaults can otherwise keep JSON.
+      // For web, let the browser set multipart boundaries automatically.
+      // For native, keep explicit multipart to avoid axios/RN defaulting to JSON.
       delete mergedHeaders["content-type"];
-      mergedHeaders["Content-Type"] = "multipart/form-data";
+      if (Platform.OS === "web") {
+        delete mergedHeaders["Content-Type"];
+      } else {
+        mergedHeaders["Content-Type"] = "multipart/form-data";
+      }
     }
 
     const config = {
@@ -252,6 +267,14 @@ class ApiClient {
 
   async signup(userData) {
     return this.client.post("/auth/signup", userData);
+  }
+
+  async googleContinue(idToken, options = {}) {
+    return this.client.post("/auth/google", {
+      idToken,
+      tenantId: options?.tenantId || undefined,
+      role: options?.role || undefined,
+    });
   }
 
   async forgotPassword(email) {
@@ -745,6 +768,10 @@ class ApiClient {
     return this.client.delete(`/admin/users/${userId}`);
   }
 
+  async adminDeleteUsersBulk(payload = {}) {
+    return this.client.post("/admin/users/delete/bulk", payload);
+  }
+
   async adminGetAuditLogs() {
     return this.client.get("/admin/audit-logs");
   }
@@ -954,7 +981,23 @@ class ApiClient {
   }
 
   async aiAssistant(payload = {}) {
-    return this.client.post("/ai/assistant", payload);
+    return this.client.post("/ai/assistant", payload, { timeout: 90000 });
+  }
+
+  async aiAppHelp(payload = {}) {
+    return this.client.post("/ai/app-help", payload);
+  }
+
+  async aiHelpDesk(payload = {}) {
+    return this.client.post("/ai/help-desk", payload, { timeout: 90000 });
+  }
+
+  async aiAdminUsersAssistant(payload = {}) {
+    return this.client.post("/ai/admin/users-assistant", payload);
+  }
+
+  async aiAdminEmailsAssistant(payload = {}) {
+    return this.client.post("/ai/admin/emails-assistant", payload, { timeout: 90000 });
   }
 
   async aiGetSettings() {
@@ -975,6 +1018,60 @@ class ApiClient {
 
   async aiVoiceTool(payload = {}) {
     return this.client.post("/ai/voice/tool", payload);
+  }
+
+  async aiVoiceLocalStatus() {
+    return this.client.get("/ai/voice/local-status");
+  }
+
+  async aiVoiceTts(payload = {}) {
+    return this.client.post("/ai/voice/tts", payload);
+  }
+
+  async aiVoiceStt({
+    file = null,
+    uri,
+    name = "voice.wav",
+    type = "audio/wav",
+    language = "",
+    translate = false,
+    targetLanguage = "en",
+  } = {}) {
+    if (!file && !uri) {
+      throw new Error("Audio file is required.");
+    }
+    const formData = new FormData();
+    if (file) {
+      if (Platform.OS === "web" && typeof Blob !== "undefined" && file instanceof Blob) {
+        formData.append("file", file, name || "voice.webm");
+      } else {
+        formData.append("file", file);
+      }
+    } else {
+      formData.append("file", {
+        uri,
+        name,
+        type,
+      });
+    }
+    if (language) {
+      formData.append("language", language);
+    }
+    if (translate) {
+      formData.append("translate", "true");
+      formData.append("targetLanguage", String(targetLanguage || "en").trim().toLowerCase());
+    }
+    const headers =
+      Platform.OS === "web"
+        ? {}
+        : {
+            "Content-Type": "multipart/form-data",
+          };
+    return this.request("/ai/voice/stt", {
+      method: "POST",
+      body: formData,
+      headers,
+    });
   }
 
   async uploadFile(file) {

@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { ArrowLeft, Crown, Sparkles, Search, FileText, MessageCircle, Mic } from "lucide-react-native";
+import { ArrowLeft, Crown, Sparkles, Search, FileText, MessageCircle, Mic, Volume2 } from "lucide-react-native";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import ScreenLayout from "@/components/ScreenLayout";
@@ -18,6 +18,31 @@ import { useAppTheme } from "@/components/ThemeProvider";
 import { useToast } from "@/components/ToastProvider";
 import { useAuthStore } from "@/utils/auth/store";
 import apiClient from "@/utils/api";
+import useAiSpeechPlayer from "@/utils/useAiSpeechPlayer";
+
+const formatListBlock = (title, items = []) => {
+  const list = (Array.isArray(items) ? items : []).filter(Boolean);
+  if (!list.length) return "";
+  return [title, ...list.map((item, index) => `${index + 1}. ${String(item)}`), ""].join("\n");
+};
+
+const formatAppHelpAnswer = (data) => {
+  if (!data) return "";
+  const title = String(data?.title || "Medilink Guide");
+  const summary = String(data?.summary || "");
+  const steps = Array.isArray(data?.steps) ? data.steps : [];
+  const tips = Array.isArray(data?.tips) ? data.tips : [];
+  return [
+    title,
+    summary,
+    "",
+    formatListBlock("Steps", steps),
+    formatListBlock("Tips", tips),
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+};
 
 export default function PatientAiAssistantScreen() {
   const router = useRouter();
@@ -31,6 +56,10 @@ export default function PatientAiAssistantScreen() {
   const [searchResults, setSearchResults] = useState([]);
   const [summary, setSummary] = useState(null);
   const [assistantAnswer, setAssistantAnswer] = useState("");
+  const { speak: speakAiText, isSpeaking: aiSpeaking } = useAiSpeechPlayer({
+    onWarn: (message) => showToast(message, "warning"),
+    onError: (message) => showToast(message, "error"),
+  });
 
   const aiSettingsQuery = useQuery({
     queryKey: ["ai-settings", "patient-ai-assistant"],
@@ -67,11 +96,22 @@ export default function PatientAiAssistantScreen() {
     onError: (error) => showToast(error.message || "AI assistant unavailable.", "error"),
   });
 
+  const aiHelpMutation = useMutation({
+    mutationFn: ({ topic, query }) => apiClient.aiAppHelp({ topic, query }),
+    onSuccess: (data) => {
+      setAssistantAnswer(formatAppHelpAnswer(data));
+      if (data?.summary) {
+        showToast("App guide generated.", "success");
+      }
+    },
+    onError: (error) => showToast(error.message || "Unable to generate app help.", "error"),
+  });
+
   const aiState = aiSettingsQuery.data || {};
   const isPremium = Boolean(aiState.isPremium);
   const aiEnabled = Boolean(aiState.aiEnabled);
   const canUse = Boolean(aiState.canUse);
-  const provider = String(aiState.provider || "gemini").toUpperCase();
+  const providerLabel = String(aiState.displayProvider || "Medilink AI");
   const blockedReason = aiState.blockedReason || "";
   const busy = aiSettingsQuery.isLoading || aiUpdateMutation.isLoading;
 
@@ -105,6 +145,23 @@ export default function PatientAiAssistantScreen() {
     aiUpdateMutation.mutate(true);
   };
 
+  const getHealthSummarySpeechText = (data) => {
+    if (!data) return "";
+    if (String(data?.speechText || "").trim()) return String(data.speechText).trim();
+    return [
+      String(data?.summary || "").trim(),
+      Array.isArray(data?.highlights) && data.highlights.length
+        ? `Highlights: ${data.highlights.slice(0, 4).join(". ")}`
+        : "",
+      Array.isArray(data?.nextSteps) && data.nextSteps.length
+        ? `Next steps: ${data.nextSteps.slice(0, 4).join(". ")}`
+        : "",
+      String(data?.disclaimer || "").trim(),
+    ]
+      .filter(Boolean)
+      .join(". ");
+  };
+
   return (
     <ScreenLayout>
       <ScrollView
@@ -134,10 +191,10 @@ export default function PatientAiAssistantScreen() {
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 22, fontFamily: "Nunito_700Bold", color: theme.text }}>
-              AI Assistant
+              Medilink AI Assistant
             </Text>
             <Text style={{ marginTop: 2, fontSize: 12, color: theme.textSecondary }}>
-              Provider: {provider}
+              Powered by {providerLabel}
             </Text>
           </View>
         </View>
@@ -215,8 +272,8 @@ export default function PatientAiAssistantScreen() {
               justifyContent: "center",
               backgroundColor: theme.surface,
             }}
-          >
-            <Mic color={theme.primary} size={15} />
+            >
+              <Mic color={theme.primary} size={15} />
             <Text
               style={{
                 marginLeft: 8,
@@ -225,7 +282,7 @@ export default function PatientAiAssistantScreen() {
                 fontFamily: "Inter_600SemiBold",
               }}
             >
-              Open Voice AI
+              Open Voice Assistant
             </Text>
           </TouchableOpacity>
         </View>
@@ -243,7 +300,7 @@ export default function PatientAiAssistantScreen() {
           <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
             <Search color={theme.primary} size={16} />
             <Text style={{ marginLeft: 8, fontSize: 14, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
-              Search Medics, Hospitals, Pharmacies
+              Medilink AI Search
             </Text>
           </View>
           <TextInput
@@ -276,10 +333,10 @@ export default function PatientAiAssistantScreen() {
             {aiSearchMutation.isLoading ? (
               <ActivityIndicator color="#FFFFFF" size="small" />
             ) : (
-              <Text style={{ color: "#FFFFFF", fontSize: 13, fontFamily: "Inter_600SemiBold" }}>
-                Run AI Search
-              </Text>
-            )}
+                <Text style={{ color: "#FFFFFF", fontSize: 13, fontFamily: "Inter_600SemiBold" }}>
+                Run Smart Search
+                </Text>
+              )}
           </TouchableOpacity>
 
           {searchResults.length > 0 && (
@@ -349,9 +406,41 @@ export default function PatientAiAssistantScreen() {
 
           {!!summary?.summary && (
             <View style={{ marginTop: 10 }}>
+              <TouchableOpacity
+                onPress={() => speakAiText(getHealthSummarySpeechText(summary))}
+                disabled={aiSpeaking}
+                style={{
+                  alignSelf: "flex-start",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginBottom: 8,
+                  backgroundColor: theme.surface,
+                  opacity: aiSpeaking ? 0.7 : 1,
+                }}
+              >
+                <Volume2 color={theme.iconColor} size={14} />
+                <Text style={{ marginLeft: 6, fontSize: 11, color: theme.textSecondary }}>
+                  {aiSpeaking ? "Reading..." : "Read Summary"}
+                </Text>
+              </TouchableOpacity>
               <Text style={{ fontSize: 13, color: theme.text, lineHeight: 20 }}>
                 {summary.summary}
               </Text>
+              {Array.isArray(summary?.highlights) && summary.highlights.length > 0 ? (
+                <Text style={{ marginTop: 8, fontSize: 12, color: theme.textSecondary, lineHeight: 18 }}>
+                  Highlights: {summary.highlights.join(" • ")}
+                </Text>
+              ) : null}
+              {Array.isArray(summary?.nextSteps) && summary.nextSteps.length > 0 ? (
+                <Text style={{ marginTop: 6, fontSize: 12, color: theme.textSecondary, lineHeight: 18 }}>
+                  Next steps: {summary.nextSteps.join(" • ")}
+                </Text>
+              ) : null}
             </View>
           )}
         </View>
@@ -368,8 +457,35 @@ export default function PatientAiAssistantScreen() {
           <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
             <MessageCircle color={theme.accent} size={16} />
             <Text style={{ marginLeft: 8, fontSize: 14, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
-              Ask AI
+              Ask Medilink AI
             </Text>
+          </View>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+            {[
+              { title: "How to book appointment", topic: "appointments" },
+              { title: "How to find medic", topic: "find_medic" },
+              { title: "Emergency guidance", topic: "emergency" },
+              { title: "Use voice assistant", topic: "voice" },
+            ].map((item) => (
+              <TouchableOpacity
+                key={item.topic}
+                onPress={() => aiHelpMutation.mutate({ topic: item.topic, query: item.title })}
+                disabled={!canUse || aiHelpMutation.isLoading}
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  backgroundColor: theme.surface,
+                  opacity: !canUse ? 0.6 : 1,
+                }}
+              >
+                <Text style={{ fontSize: 11, color: theme.textSecondary, fontFamily: "Inter_600SemiBold" }}>
+                  {item.title}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
           <TextInput
             value={assistantQuery}
@@ -405,7 +521,7 @@ export default function PatientAiAssistantScreen() {
               <ActivityIndicator color="#FFFFFF" size="small" />
             ) : (
               <Text style={{ color: "#FFFFFF", fontSize: 13, fontFamily: "Inter_600SemiBold" }}>
-                Ask AI
+                Ask Medilink AI
               </Text>
             )}
           </TouchableOpacity>
@@ -426,6 +542,28 @@ export default function PatientAiAssistantScreen() {
                   AI response
                 </Text>
               </View>
+              <TouchableOpacity
+                onPress={() => speakAiText(assistantAnswer)}
+                disabled={aiSpeaking}
+                style={{
+                  alignSelf: "flex-start",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginBottom: 8,
+                  backgroundColor: theme.surface,
+                  opacity: aiSpeaking ? 0.7 : 1,
+                }}
+              >
+                <Volume2 color={theme.iconColor} size={14} />
+                <Text style={{ marginLeft: 6, fontSize: 11, color: theme.textSecondary }}>
+                  {aiSpeaking ? "Reading..." : "Read Response"}
+                </Text>
+              </TouchableOpacity>
               <Text style={{ fontSize: 13, color: theme.text, lineHeight: 20 }}>
                 {assistantAnswer}
               </Text>

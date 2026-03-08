@@ -1,5 +1,5 @@
-import React from "react";
-import { View, Text, ScrollView, TouchableOpacity, useWindowDimensions } from "react-native";
+import React, { useMemo, useState } from "react";
+import { ActivityIndicator, View, Text, ScrollView, TouchableOpacity, TextInput, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { usePathname, useRouter } from "expo-router";
@@ -19,6 +19,7 @@ import {
   Home,
   MessageCircle,
   ShieldAlert,
+  Volume2,
 } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
@@ -30,6 +31,7 @@ import { useOnlineUsers } from "@/utils/useOnlineUsers";
 import OnlineStatusChip from "@/components/OnlineStatusChip";
 import { useToast } from "@/components/ToastProvider";
 import { getFirstName, getTimeGreeting } from "@/utils/greeting";
+import useAiSpeechPlayer from "@/utils/useAiSpeechPlayer";
 
 export default function AdminOverviewScreen() {
   const router = useRouter();
@@ -45,6 +47,10 @@ export default function AdminOverviewScreen() {
   const { showToast } = useToast();
   const isOnline = isUserOnline(auth?.user);
   const isWide = screenWidth >= 1024;
+  const { speak: speakAiText, isSpeaking: aiSpeaking } = useAiSpeechPlayer({
+    onWarn: (message) => showToast(message, "warning"),
+    onError: (message) => showToast(message, "error"),
+  });
 
   const overviewQuery = useQuery({
     queryKey: ["admin-overview"],
@@ -75,9 +81,236 @@ export default function AdminOverviewScreen() {
 
   const aiState = aiSettingsQuery.data || {};
   const aiEnabled = Boolean(aiState.aiEnabled);
-  const aiProvider = String(aiState.provider || "gemini").toUpperCase();
+  const aiCanUse = Boolean(aiState.canUse);
+  const aiProviderLabel = String(aiState.displayProvider || "Medilink AI");
   const aiBusy = aiSettingsQuery.isLoading || aiUpdateMutation.isLoading;
   const aiBlockedReason = aiState.blockedReason || "";
+
+  const [aiUserQuery, setAiUserQuery] = useState("");
+  const [aiUserResponse, setAiUserResponse] = useState(null);
+  const [aiEmailInput, setAiEmailInput] = useState("");
+  const [aiEmailReadResponse, setAiEmailReadResponse] = useState(null);
+  const [aiEmailBrief, setAiEmailBrief] = useState("");
+  const [aiEmailTone, setAiEmailTone] = useState("professional");
+  const [aiEmailAudience, setAiEmailAudience] = useState("ALL");
+  const [aiEmailDraftResponse, setAiEmailDraftResponse] = useState(null);
+  const [helpDeskQuery, setHelpDeskQuery] = useState("");
+  const [helpDeskResponse, setHelpDeskResponse] = useState(null);
+
+  const buildRouteWithParams = (target, params = {}) => {
+    const base = String(target || "").trim();
+    if (!base) return "";
+    const entries = Object.entries(params || {}).filter(
+      ([, value]) => value !== undefined && value !== null && String(value).trim() !== "",
+    );
+    if (!entries.length) return base;
+    const query = entries
+      .map(([key, value]) => `${encodeURIComponent(String(key))}=${encodeURIComponent(String(value))}`)
+      .join("&");
+    const separator = base.includes("?") ? "&" : "?";
+    return `${base}${separator}${query}`;
+  };
+
+  const runHelpDeskActions = async (actions = []) => {
+    const list = Array.isArray(actions) ? actions : [];
+    const reports = [];
+    for (const action of list) {
+      const type = String(action?.type || "").toUpperCase();
+      try {
+        if (type === "OPEN_SCREEN") {
+          const route = buildRouteWithParams(action?.target, action?.params || {});
+          if (route) {
+            router.push(route);
+            reports.push(`Opened ${route}`);
+          }
+          continue;
+        }
+
+        if (type === "SEND_NOTIFICATION" && action?.execute) {
+          await apiClient.adminSendNotification(action?.payload || {});
+          reports.push("Notification sent.");
+          continue;
+        }
+
+        if (type === "CREATE_SUPPORT_TICKET" && action?.execute) {
+          const ticket = await apiClient.adminCreateSupportTicket(action?.payload || {});
+          reports.push(`Support ticket created${ticket?.id ? `: ${ticket.id}` : "."}`);
+          continue;
+        }
+
+        if (type === "CREATE_EMERGENCY_INCIDENT" && action?.execute) {
+          const incident = await apiClient.adminCreateEmergencyIncident(action?.payload || {});
+          reports.push(`Emergency incident created${incident?.id ? `: ${incident.id}` : "."}`);
+          continue;
+        }
+
+        if (type === "EXPORT_COMPLIANCE" && action?.execute) {
+          const scope = String(action?.scope || "overview");
+          await apiClient.adminExportComplianceSnapshot({ scope });
+          reports.push(`Compliance snapshot exported for scope: ${scope}.`);
+          continue;
+        }
+
+        if (type === "UPDATE_FEATURE_FLAG" && action?.execute && action?.flag) {
+          const current = await apiClient.adminGetFeatureFlags();
+          const merged = {
+            ...(current?.flags || {}),
+            [String(action.flag)]: Boolean(action?.value),
+          };
+          await apiClient.adminUpdateFeatureFlags(merged);
+          reports.push(
+            `Feature flag ${String(action.flag)} set to ${Boolean(action?.value) ? "enabled" : "disabled"}.`,
+          );
+          continue;
+        }
+
+        if (type === "BLOCK_USER" && action?.execute && action?.userId) {
+          await apiClient.blockAdminUser(action.userId, Boolean(action?.blocked));
+          reports.push(action?.blocked ? "User suspended." : "User unsuspended.");
+          continue;
+        }
+
+        if (type === "VERIFY_USER" && action?.execute && action?.userId) {
+          await apiClient.verifyAdminUser(action.userId, Boolean(action?.verified));
+          reports.push(action?.verified ? "User verified." : "User unverified.");
+          continue;
+        }
+
+        if (type === "TOGGLE_AI" && action?.execute) {
+          await apiClient.aiUpdateSettings({ enabled: Boolean(action?.enabled) });
+          aiSettingsQuery.refetch();
+          reports.push(Boolean(action?.enabled) ? "AI enabled." : "AI disabled.");
+          continue;
+        }
+      } catch (error) {
+        reports.push(String(error?.message || `Failed action: ${type}`));
+      }
+    }
+    return reports;
+  };
+
+  const aiUserAssistantMutation = useMutation({
+    mutationFn: (query) => apiClient.aiAdminUsersAssistant({ query }),
+    onSuccess: (data) => {
+      setAiUserResponse(data || null);
+      showToast("AI user search completed.", "success");
+    },
+    onError: (error) => {
+      showToast(error?.message || "AI user search failed.", "error");
+    },
+  });
+
+  const aiEmailReadMutation = useMutation({
+    mutationFn: (emailText) =>
+      apiClient.aiAdminEmailsAssistant({
+        mode: "summarize",
+        emailText,
+      }),
+    onSuccess: (data) => {
+      setAiEmailReadResponse(data || null);
+      showToast("Email summary generated.", "success");
+    },
+    onError: (error) => {
+      showToast(error?.message || "Email summary failed.", "error");
+    },
+  });
+
+  const aiEmailDraftMutation = useMutation({
+    mutationFn: ({ brief, tone, audience }) =>
+      apiClient.aiAdminEmailsAssistant({
+        mode: "compose",
+        brief,
+        tone,
+        audience,
+      }),
+    onSuccess: (data) => {
+      setAiEmailDraftResponse(data || null);
+      showToast("Email draft generated.", "success");
+    },
+    onError: (error) => {
+      showToast(error?.message || "Email draft generation failed.", "error");
+    },
+  });
+
+  const aiHelpDeskMutation = useMutation({
+    mutationFn: ({ query, execute }) =>
+      apiClient.aiHelpDesk({
+        query,
+        execute: Boolean(execute),
+        tone: aiEmailTone,
+        audience: aiEmailAudience,
+      }),
+    onSuccess: async (data, variables) => {
+      let executionReports = [];
+      if (variables?.execute) {
+        executionReports = await runHelpDeskActions(data?.actions || []);
+      }
+      setHelpDeskResponse({
+        ...(data || {}),
+        executionReports,
+      });
+      if (String(data?.intent || "") === "draft_email" && data?.data) {
+        setAiEmailDraftResponse(data.data);
+      }
+      if (variables?.execute && executionReports.length) {
+        showToast(executionReports[0], "success");
+      } else {
+        showToast("AI help desk response ready.", "success");
+      }
+    },
+    onError: (error) => {
+      showToast(error?.message || "AI help desk failed.", "error");
+    },
+  });
+
+  const aiSuggestedFilters = aiUserResponse?.suggestedFilters || {};
+  const aiSuggestedQueryParams = useMemo(() => {
+    const entries = [];
+    if (aiSuggestedFilters?.role) {
+      entries.push(`role=${encodeURIComponent(String(aiSuggestedFilters.role))}`);
+    }
+    if (aiSuggestedFilters?.status) {
+      entries.push(`status=${encodeURIComponent(String(aiSuggestedFilters.status))}`);
+    }
+    if (aiSuggestedFilters?.search) {
+      entries.push(`search=${encodeURIComponent(String(aiSuggestedFilters.search))}`);
+    }
+    if (typeof aiSuggestedFilters?.subscriptionActive === "boolean") {
+      entries.push(`active=${encodeURIComponent(String(aiSuggestedFilters.subscriptionActive))}`);
+    }
+    if (typeof aiSuggestedFilters?.online === "boolean") {
+      entries.push(`online=${encodeURIComponent(String(aiSuggestedFilters.online))}`);
+    }
+    return entries.join("&");
+  }, [aiSuggestedFilters]);
+
+  const getEmailSummarySpeechText = (data) => {
+    if (!data) return "";
+    if (String(data?.speechText || "").trim()) return String(data.speechText).trim();
+    return [
+      String(data?.summary || "").trim(),
+      Array.isArray(data?.keyPoints) && data.keyPoints.length
+        ? `Key points: ${data.keyPoints.slice(0, 4).join(". ")}`
+        : "",
+      Array.isArray(data?.actionItems) && data.actionItems.length
+        ? `Action items: ${data.actionItems.slice(0, 4).join(". ")}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(". ");
+  };
+
+  const getEmailDraftSpeechText = (data) => {
+    if (!data) return "";
+    if (String(data?.speechText || "").trim()) return String(data.speechText).trim();
+    return [
+      data?.subject ? `Subject: ${String(data.subject).trim()}` : "",
+      String(data?.preview || "").trim(),
+      String(data?.body || "").trim(),
+    ]
+      .filter(Boolean)
+      .join(". ");
+  };
 
   const cards = [
     {
@@ -116,6 +349,7 @@ export default function AdminOverviewScreen() {
   const sidebarLinks = [
     { key: "dashboard", title: "Dashboard", href: "/(app)/(admin)", icon: Home },
     { key: "users", title: "Users", href: "/(app)/(admin)/users", icon: Users },
+    { key: "ai-finder", title: "AI Finder", href: "/(app)/(shared)/ai-finder", icon: Sparkles },
     { key: "subscriptions", title: "Subscriptions", href: "/(app)/(admin)/subscriptions", icon: CreditCard },
     { key: "control-center", title: "Control Center", href: "/(app)/(admin)/control-center", icon: ShieldAlert },
     { key: "complaints", title: "Complaints", href: "/(app)/(admin)/complaints", icon: ShieldAlert },
@@ -453,7 +687,7 @@ export default function AdminOverviewScreen() {
                     AI Status: {aiEnabled ? "Enabled" : "Disabled"}
                   </Text>
                   <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
-                    Provider: {aiProvider}
+                    Powered by {aiProviderLabel}
                   </Text>
                 </View>
               </View>
@@ -494,6 +728,527 @@ export default function AdminOverviewScreen() {
                 Open AI Settings
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => router.push("/(app)/(shared)/ai-finder")}
+              style={{
+                marginTop: 10,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: theme.border,
+                paddingVertical: 9,
+                alignItems: "center",
+                backgroundColor: theme.surface,
+              }}
+            >
+              <Text style={{ fontSize: 12, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                Open AI Finder
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View
+            style={{
+              backgroundColor: theme.card,
+              borderTopWidth: isDark ? 0 : 1.5,
+              borderTopColor: isDark ? theme.border : theme.accent,
+              borderRadius: 16,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: theme.border,
+              marginBottom: 18,
+            }}
+          >
+            <Text style={{ fontSize: 14, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+              AI User Search and Filter
+            </Text>
+            <Text style={{ marginTop: 4, fontSize: 12, color: theme.textSecondary }}>
+              Describe the users you want (example: unverified medics in Nairobi with inactive subscription).
+            </Text>
+            <TextInput
+              value={aiUserQuery}
+              onChangeText={setAiUserQuery}
+              placeholder="Search request..."
+              placeholderTextColor={theme.textSecondary}
+              style={{
+                marginTop: 10,
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                color: theme.text,
+                fontSize: 13,
+                backgroundColor: theme.surface,
+              }}
+            />
+            <TouchableOpacity
+              onPress={() => aiUserAssistantMutation.mutate(aiUserQuery.trim())}
+              disabled={!aiCanUse || !aiUserQuery.trim() || aiUserAssistantMutation.isLoading}
+              style={{
+                marginTop: 10,
+                borderRadius: 10,
+                paddingVertical: 10,
+                alignItems: "center",
+                backgroundColor: theme.primary,
+                opacity: !aiCanUse || !aiUserQuery.trim() ? 0.6 : 1,
+              }}
+            >
+              {aiUserAssistantMutation.isLoading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={{ fontSize: 12, color: "#fff", fontFamily: "Inter_600SemiBold" }}>
+                  Run AI User Search
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {aiUserResponse ? (
+              <View
+                style={{
+                  marginTop: 10,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  padding: 10,
+                  backgroundColor: theme.surface,
+                }}
+              >
+                <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                  Matched users: {Number(aiUserResponse?.totalMatched || 0)}
+                </Text>
+                <Text style={{ marginTop: 3, fontSize: 11, color: theme.textSecondary }}>
+                  Suggested filters: role={aiSuggestedFilters?.role || "any"} • status=
+                  {aiSuggestedFilters?.status || "any"} • verified=
+                  {typeof aiSuggestedFilters?.verified === "boolean"
+                    ? String(aiSuggestedFilters.verified)
+                    : "any"}{" "}
+                  • subscriptionActive=
+                  {typeof aiSuggestedFilters?.subscriptionActive === "boolean"
+                    ? String(aiSuggestedFilters.subscriptionActive)
+                    : "any"}
+                </Text>
+
+                <View style={{ marginTop: 8, gap: 6 }}>
+                  {(Array.isArray(aiUserResponse?.results) ? aiUserResponse.results : [])
+                    .slice(0, 6)
+                    .map((item) => (
+                      <Text key={item.id} style={{ fontSize: 12, color: theme.text }}>
+                        {item.fullName} • {item.email} • {item.role} • {item.status}
+                      </Text>
+                    ))}
+                </View>
+
+                <TouchableOpacity
+                  onPress={() =>
+                    router.push(
+                      `/(app)/(admin)/users${aiSuggestedQueryParams ? `?${aiSuggestedQueryParams}` : ""}`,
+                    )
+                  }
+                  style={{
+                    marginTop: 10,
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                    borderRadius: 10,
+                    backgroundColor: theme.card,
+                    paddingVertical: 9,
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ fontSize: 12, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                    Open Users List with AI Filters
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </View>
+
+          <View
+            style={{
+              backgroundColor: theme.card,
+              borderTopWidth: isDark ? 0 : 1.5,
+              borderTopColor: isDark ? theme.border : theme.accent,
+              borderRadius: 16,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: theme.border,
+              marginBottom: 18,
+            }}
+          >
+            <Text style={{ fontSize: 14, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+              AI Help Desk and Task Automation
+            </Text>
+            <Text style={{ marginTop: 4, fontSize: 12, color: theme.textSecondary }}>
+              Ask app questions or request tasks like: "filter suspended medics", "create support ticket for login issue",
+              "export compliance snapshot", "disable feature flag ai_voice_enabled".
+            </Text>
+            <TextInput
+              value={helpDeskQuery}
+              onChangeText={setHelpDeskQuery}
+              placeholder="Ask Medilink AI help desk..."
+              placeholderTextColor={theme.textSecondary}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+              style={{
+                marginTop: 10,
+                minHeight: 85,
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                paddingTop: 10,
+                color: theme.text,
+                fontSize: 13,
+                backgroundColor: theme.surface,
+              }}
+            />
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
+              <TouchableOpacity
+                onPress={() => aiHelpDeskMutation.mutate({ query: helpDeskQuery.trim(), execute: false })}
+                disabled={!aiCanUse || !helpDeskQuery.trim() || aiHelpDeskMutation.isLoading}
+                style={{
+                  flex: 1,
+                  borderRadius: 10,
+                  paddingVertical: 10,
+                  alignItems: "center",
+                  backgroundColor: theme.primary,
+                  opacity: !aiCanUse || !helpDeskQuery.trim() ? 0.6 : 1,
+                }}
+              >
+                {aiHelpDeskMutation.isLoading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={{ fontSize: 12, color: "#fff", fontFamily: "Inter_600SemiBold" }}>
+                    Ask Help Desk
+                  </Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => aiHelpDeskMutation.mutate({ query: helpDeskQuery.trim(), execute: true })}
+                disabled={!aiCanUse || !helpDeskQuery.trim() || aiHelpDeskMutation.isLoading}
+                style={{
+                  flex: 1,
+                  borderRadius: 10,
+                  paddingVertical: 10,
+                  alignItems: "center",
+                  backgroundColor: theme.success,
+                  opacity: !aiCanUse || !helpDeskQuery.trim() ? 0.6 : 1,
+                }}
+              >
+                <Text style={{ fontSize: 12, color: "#fff", fontFamily: "Inter_600SemiBold" }}>
+                  Auto-Run Task
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {helpDeskResponse ? (
+              <View
+                style={{
+                  marginTop: 10,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  padding: 10,
+                  backgroundColor: theme.surface,
+                }}
+              >
+                <Text style={{ fontSize: 11, color: theme.textSecondary }}>
+                  Intent: {String(helpDeskResponse?.intent || "help")}
+                </Text>
+                <Text style={{ marginTop: 5, fontSize: 12, color: theme.text }}>
+                  {String(helpDeskResponse?.answer || "")}
+                </Text>
+
+                {helpDeskResponse?.data?.subject ? (
+                  <View style={{ marginTop: 8 }}>
+                    <Text style={{ fontSize: 12, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                      Draft Subject: {String(helpDeskResponse.data.subject)}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {Array.isArray(helpDeskResponse?.actions) && helpDeskResponse.actions.length ? (
+                  <View style={{ marginTop: 8, gap: 4 }}>
+                    {helpDeskResponse.actions.map((action, idx) => (
+                      <Text key={`${String(action?.type || "ACTION")}-${idx}`} style={{ fontSize: 11, color: theme.textSecondary }}>
+                        Action: {String(action?.type || "ACTION")}
+                        {action?.flag ? ` (${String(action.flag)}=${String(action?.value)})` : ""}
+                        {action?.scope ? ` (${String(action.scope)})` : ""}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
+
+                {Array.isArray(helpDeskResponse?.executionReports) &&
+                helpDeskResponse.executionReports.length ? (
+                  <View style={{ marginTop: 8, gap: 4 }}>
+                    {helpDeskResponse.executionReports.map((line, idx) => (
+                      <Text key={`exec-${idx}`} style={{ fontSize: 11, color: theme.textSecondary }}>
+                        {line}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+
+          <View
+            style={{
+              backgroundColor: theme.card,
+              borderTopWidth: isDark ? 0 : 1.5,
+              borderTopColor: isDark ? theme.border : theme.accent,
+              borderRadius: 16,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: theme.border,
+              marginBottom: 18,
+            }}
+          >
+            <Text style={{ fontSize: 14, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+              AI Email Reader
+            </Text>
+            <TextInput
+              value={aiEmailInput}
+              onChangeText={setAiEmailInput}
+              placeholder="Paste incoming email here for summary..."
+              placeholderTextColor={theme.textSecondary}
+              multiline
+              numberOfLines={5}
+              textAlignVertical="top"
+              style={{
+                marginTop: 10,
+                minHeight: 110,
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                paddingTop: 10,
+                color: theme.text,
+                fontSize: 13,
+                backgroundColor: theme.surface,
+              }}
+            />
+            <TouchableOpacity
+              onPress={() => aiEmailReadMutation.mutate(aiEmailInput.trim())}
+              disabled={!aiCanUse || !aiEmailInput.trim() || aiEmailReadMutation.isLoading}
+              style={{
+                marginTop: 10,
+                borderRadius: 10,
+                paddingVertical: 10,
+                alignItems: "center",
+                backgroundColor: theme.primary,
+                opacity: !aiCanUse || !aiEmailInput.trim() ? 0.6 : 1,
+              }}
+            >
+              {aiEmailReadMutation.isLoading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={{ fontSize: 12, color: "#fff", fontFamily: "Inter_600SemiBold" }}>
+                  Summarize Email with AI
+                </Text>
+              )}
+            </TouchableOpacity>
+            {aiEmailReadResponse ? (
+              <View
+                style={{
+                  marginTop: 10,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  padding: 10,
+                  backgroundColor: theme.surface,
+                }}
+              >
+                <TouchableOpacity
+                  onPress={() => speakAiText(getEmailSummarySpeechText(aiEmailReadResponse))}
+                  disabled={aiSpeaking}
+                  style={{
+                    alignSelf: "flex-start",
+                    flexDirection: "row",
+                    alignItems: "center",
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                    borderRadius: 10,
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    marginBottom: 8,
+                    backgroundColor: theme.card,
+                    opacity: aiSpeaking ? 0.7 : 1,
+                  }}
+                >
+                  <Volume2 color={theme.iconColor} size={14} />
+                  <Text style={{ marginLeft: 6, fontSize: 11, color: theme.textSecondary }}>
+                    {aiSpeaking ? "Reading..." : "Read Summary"}
+                  </Text>
+                </TouchableOpacity>
+                <Text style={{ fontSize: 12, color: theme.text }}>{aiEmailReadResponse?.summary}</Text>
+                {Array.isArray(aiEmailReadResponse?.actionItems) &&
+                aiEmailReadResponse.actionItems.length ? (
+                  <Text style={{ marginTop: 6, fontSize: 11, color: theme.textSecondary }}>
+                    Actions: {aiEmailReadResponse.actionItems.join(" • ")}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+
+          <View
+            style={{
+              backgroundColor: theme.card,
+              borderTopWidth: isDark ? 0 : 1.5,
+              borderTopColor: isDark ? theme.border : theme.accent,
+              borderRadius: 16,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: theme.border,
+              marginBottom: 18,
+            }}
+          >
+            <Text style={{ fontSize: 14, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+              AI Email Writer
+            </Text>
+            <TextInput
+              value={aiEmailBrief}
+              onChangeText={setAiEmailBrief}
+              placeholder="Describe what email you want to send..."
+              placeholderTextColor={theme.textSecondary}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+              style={{
+                marginTop: 10,
+                minHeight: 95,
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                paddingTop: 10,
+                color: theme.text,
+                fontSize: 13,
+                backgroundColor: theme.surface,
+              }}
+            />
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+              <TextInput
+                value={aiEmailTone}
+                onChangeText={setAiEmailTone}
+                placeholder="tone"
+                placeholderTextColor={theme.textSecondary}
+                style={{
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  color: theme.text,
+                  fontSize: 12,
+                  backgroundColor: theme.surface,
+                }}
+              />
+              <TextInput
+                value={aiEmailAudience}
+                onChangeText={setAiEmailAudience}
+                placeholder="audience"
+                placeholderTextColor={theme.textSecondary}
+                style={{
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  color: theme.text,
+                  fontSize: 12,
+                  backgroundColor: theme.surface,
+                }}
+              />
+            </View>
+            <TouchableOpacity
+              onPress={() =>
+                aiEmailDraftMutation.mutate({
+                  brief: aiEmailBrief.trim(),
+                  tone: aiEmailTone.trim(),
+                  audience: aiEmailAudience.trim(),
+                })
+              }
+              disabled={!aiCanUse || !aiEmailBrief.trim() || aiEmailDraftMutation.isLoading}
+              style={{
+                marginTop: 10,
+                borderRadius: 10,
+                paddingVertical: 10,
+                alignItems: "center",
+                backgroundColor: theme.primary,
+                opacity: !aiCanUse || !aiEmailBrief.trim() ? 0.6 : 1,
+              }}
+            >
+              {aiEmailDraftMutation.isLoading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={{ fontSize: 12, color: "#fff", fontFamily: "Inter_600SemiBold" }}>
+                  Draft Email with AI
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {aiEmailDraftResponse ? (
+              <View
+                style={{
+                  marginTop: 10,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  padding: 10,
+                  backgroundColor: theme.surface,
+                }}
+              >
+                <TouchableOpacity
+                  onPress={() => speakAiText(getEmailDraftSpeechText(aiEmailDraftResponse))}
+                  disabled={aiSpeaking}
+                  style={{
+                    alignSelf: "flex-start",
+                    flexDirection: "row",
+                    alignItems: "center",
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                    borderRadius: 10,
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    marginBottom: 8,
+                    backgroundColor: theme.card,
+                    opacity: aiSpeaking ? 0.7 : 1,
+                  }}
+                >
+                  <Volume2 color={theme.iconColor} size={14} />
+                  <Text style={{ marginLeft: 6, fontSize: 11, color: theme.textSecondary }}>
+                    {aiSpeaking ? "Reading..." : "Read Draft"}
+                  </Text>
+                </TouchableOpacity>
+                <Text style={{ fontSize: 12, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                  Subject: {aiEmailDraftResponse?.subject || "(no subject)"}
+                </Text>
+                <Text style={{ marginTop: 6, fontSize: 12, color: theme.text }}>
+                  {aiEmailDraftResponse?.body || ""}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => router.push("/(app)/(admin)/email-center")}
+                  style={{
+                    marginTop: 10,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                    paddingVertical: 8,
+                    alignItems: "center",
+                    backgroundColor: theme.card,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                    Open Email Center
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
           </View>
 
           <Text

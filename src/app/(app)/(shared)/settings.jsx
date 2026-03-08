@@ -95,7 +95,7 @@ export default function SharedSettingsScreen() {
   const aiState = aiSettingsQuery.data || {};
   const isPremium = Boolean(aiState.isPremium);
   const aiEnabled = Boolean(aiState.aiEnabled);
-  const aiProvider = String(aiState.provider || "gemini").toUpperCase();
+  const aiProviderLabel = String(aiState.displayProvider || "Medilink AI");
   const aiBusy = aiSettingsQuery.isLoading || aiUpdateMutation.isLoading;
 
   const handleToggleAi = (nextValue) => {
@@ -573,7 +573,7 @@ export default function SharedSettingsScreen() {
                 Enable AI Assistant
               </Text>
               <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 4 }}>
-                Provider: {aiProvider} • {isPremium ? "Premium active" : "Premium inactive"}
+                {aiProviderLabel} • {isPremium ? "Premium active" : "Premium inactive"}
               </Text>
               {!isPremium && (
                 <Text style={{ fontSize: 12, color: theme.warning, marginTop: 4 }}>

@@ -14,6 +14,8 @@ import { ArrowLeft, Send, X } from "lucide-react-native";
 import { Check, CheckCheck } from "lucide-react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
+import * as DocumentPicker from "expo-document-picker";
+import * as Speech from "expo-speech";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -59,6 +61,9 @@ export default function ChatScreen() {
   const isChatAllowed = recipientRole ? canContact(senderRole, recipientRole) : true;
 
   const [message, setMessage] = useState("");
+  const [sttLanguage, setSttLanguage] = useState("auto");
+  const [translateTranscript, setTranslateTranscript] = useState(false);
+  const [translateTargetLanguage, setTranslateTargetLanguage] = useState("en");
   const [replyTo, setReplyTo] = useState(null);
   const [hiddenMessageIds, setHiddenMessageIds] = useState({});
   const queryClient = useQueryClient();
@@ -98,6 +103,92 @@ export default function ChatScreen() {
     },
   });
 
+  const transcribeMutation = useMutation({
+    mutationFn: async () => {
+      const picked = await DocumentPicker.getDocumentAsync({
+        type: "audio/*",
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (picked.canceled) return null;
+      const asset = Array.isArray(picked.assets) ? picked.assets[0] : null;
+      if (!asset?.uri) {
+        throw new Error("No audio file selected.");
+      }
+      return apiClient.aiVoiceStt({
+        uri: asset.uri,
+        name: asset.name || "voice.wav",
+        type: asset.mimeType || "audio/wav",
+        language: sttLanguage.trim().toLowerCase() === "auto" ? "" : sttLanguage.trim(),
+        translate: translateTranscript,
+        targetLanguage: translateTargetLanguage.trim().toLowerCase() || "en",
+      });
+    },
+    onSuccess: (data) => {
+      if (!data) return;
+      const transcript = String(data?.text || "").trim();
+      if (!transcript) {
+        showToast("No transcript returned.", "warning");
+        return;
+      }
+      setMessage((current) => (current ? `${current} ${transcript}` : transcript));
+      showToast(
+        translateTranscript
+          ? `Audio translated to ${translateTargetLanguage.trim() || "en"}.`
+          : `Audio transcribed (${String(data?.language || sttLanguage || "auto")}).`,
+        "success",
+      );
+      if (translateTranscript) {
+        Speech.stop().catch(() => undefined);
+        Speech.speak(transcript, {
+          language: resolveSpeechLanguage(),
+          rate: 0.95,
+          pitch: 1.0,
+        });
+      }
+    },
+    onError: (error) => {
+      showToast(error?.message || "Audio transcription failed.", "error");
+    },
+  });
+
+  const resolveSpeechLanguage = () => {
+    const code = String(translateTargetLanguage || "").trim().toLowerCase();
+    if (!code) return undefined;
+    const map = {
+      en: "en-US",
+      sw: "sw-KE",
+      fr: "fr-FR",
+      ar: "ar-SA",
+      es: "es-ES",
+      de: "de-DE",
+      pt: "pt-PT",
+      hi: "hi-IN",
+      zh: "zh-CN",
+    };
+    return map[code] || code;
+  };
+
+  const readMessageMutation = useMutation({
+    mutationFn: async (text) => {
+      const cleanText = String(text || "").trim();
+      if (!cleanText) throw new Error("Message is empty.");
+      await Speech.stop();
+      Speech.speak(cleanText, {
+        language: resolveSpeechLanguage(),
+        rate: 0.95,
+        pitch: 1.0,
+      });
+      return true;
+    },
+    onSuccess: () => {
+      showToast("Reading message aloud.", "success");
+    },
+    onError: (error) => {
+      showToast(error?.message || "Unable to read message aloud.", "error");
+    },
+  });
+
   const parseQuotedMessage = (rawText) => {
     const text = String(rawText || "");
     const match = text.match(/^> ([^:]+): (.*)\n([\s\S]*)$/);
@@ -129,6 +220,15 @@ export default function ChatScreen() {
     } catch {
       showToast("Unable to copy message.", "error");
     }
+  };
+
+  const handleReadMessageAloud = (item) => {
+    const content = parseQuotedMessage(item?.text).body;
+    if (!content) {
+      showToast("Message is empty.", "warning");
+      return;
+    }
+    readMessageMutation.mutate(content);
   };
 
   const handleDeleteForMe = async (item) => {
@@ -163,6 +263,7 @@ export default function ChatScreen() {
     const actions = [
       { text: "Reply", onPress: () => setReplyTo(item) },
       { text: "Copy", onPress: () => handleCopyMessage(item) },
+      { text: "Read aloud", onPress: () => handleReadMessageAloud(item) },
       {
         text: "Delete for me",
         style: "destructive",
@@ -318,6 +419,96 @@ export default function ChatScreen() {
             }}
           >
             Chat {recipientId ? `#${recipientId}` : ""}
+          </Text>
+        </View>
+
+        <View
+          style={{
+            paddingHorizontal: 24,
+            marginBottom: 10,
+            flexDirection: "row",
+            alignItems: "center",
+          }}
+        >
+          <TouchableOpacity
+            onPress={() => transcribeMutation.mutate()}
+            disabled={!isChatAllowed || transcribeMutation.isLoading}
+            style={{
+              borderWidth: 1,
+              borderColor: theme.border,
+              backgroundColor: theme.surface,
+              borderRadius: 10,
+              paddingHorizontal: 10,
+              paddingVertical: 8,
+              opacity: !isChatAllowed ? 0.6 : 1,
+            }}
+          >
+            {transcribeMutation.isLoading ? (
+              <ActivityIndicator color={theme.primary} size="small" />
+            ) : (
+              <Text style={{ fontSize: 11, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                Transcribe Audio
+              </Text>
+            )}
+          </TouchableOpacity>
+          <TextInput
+            value={sttLanguage}
+            onChangeText={setSttLanguage}
+            placeholder="auto"
+            placeholderTextColor={theme.textSecondary}
+            autoCapitalize="none"
+            style={{
+              marginLeft: 8,
+              width: 90,
+              borderWidth: 1,
+              borderColor: theme.border,
+              borderRadius: 10,
+              backgroundColor: theme.surface,
+              paddingHorizontal: 10,
+              paddingVertical: 8,
+              color: theme.text,
+              fontSize: 11,
+            }}
+          />
+          <TouchableOpacity
+            onPress={() => setTranslateTranscript((current) => !current)}
+            style={{
+              marginLeft: 8,
+              borderWidth: 1,
+              borderColor: translateTranscript ? theme.success : theme.border,
+              borderRadius: 10,
+              backgroundColor: translateTranscript ? `${theme.success}22` : theme.surface,
+              paddingHorizontal: 8,
+              paddingVertical: 8,
+            }}
+          >
+            <Text style={{ fontSize: 10, color: theme.text }}>
+              {translateTranscript ? "Translate: ON" : "Translate: OFF"}
+            </Text>
+          </TouchableOpacity>
+          {translateTranscript ? (
+            <TextInput
+              value={translateTargetLanguage}
+              onChangeText={setTranslateTargetLanguage}
+              placeholder="en"
+              placeholderTextColor={theme.textSecondary}
+              autoCapitalize="none"
+              style={{
+                marginLeft: 8,
+                width: 60,
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 10,
+                backgroundColor: theme.surface,
+                paddingHorizontal: 8,
+                paddingVertical: 8,
+                color: theme.text,
+                fontSize: 11,
+              }}
+            />
+          ) : null}
+          <Text style={{ marginLeft: 8, fontSize: 10, color: theme.textSecondary }}>
+            Lang / To
           </Text>
         </View>
 

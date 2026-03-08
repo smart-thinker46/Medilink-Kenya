@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -25,10 +25,13 @@ import {
   Pill,
 } from "lucide-react-native";
 import { useMutation } from "@tanstack/react-query";
+import * as Google from "expo-auth-session/providers/google";
+import * as WebBrowser from "expo-web-browser";
 
 import Input from "@/components/Input";
 import Button from "@/components/Button";
 import { useAppTheme } from "@/components/ThemeProvider";
+import { useAuthStore } from "@/utils/auth/store";
 import apiClient from "@/utils/api";
 import { useI18n } from "@/utils/i18n";
 
@@ -40,11 +43,14 @@ const MotiView =
       )
     : BaseMotiView;
 
+WebBrowser.maybeCompleteAuthSession();
+
 export default function SignupScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useAppTheme();
   const { t, language, setLanguage } = useI18n();
+  const { setAuth } = useAuthStore();
 
   const [step, setStep] = useState(1); // 1: Role Selection, 2: Basic Info
   const [selectedRole, setSelectedRole] = useState(null);
@@ -60,6 +66,15 @@ export default function SignupScreen() {
   });
 
   const [errors, setErrors] = useState({});
+
+  const [googleRequest, googleResponse, promptGoogleSignUp] =
+    Google.useIdTokenAuthRequest({
+      expoClientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID || undefined,
+      androidClientId:
+        process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || undefined,
+      iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || undefined,
+      webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || undefined,
+    });
 
   const roles = [
     {
@@ -109,6 +124,72 @@ export default function SignupScreen() {
       Alert.alert(t("signup_failed"), error.message || "Please try again");
     },
   });
+
+  const completeLogin = (data) => {
+    setAuth({
+      token: data?.accessToken,
+      user: data?.user,
+      tenantId: data?.tenantId,
+      tenant: data?.tenant,
+    });
+    const role = data?.user?.role?.toUpperCase?.() || data?.user?.role;
+    switch (role) {
+      case "PATIENT":
+        router.replace("/(app)/(patient)");
+        break;
+      case "MEDIC":
+        router.replace("/(app)/(medic)");
+        break;
+      case "HOSPITAL_ADMIN":
+        router.replace("/(app)/(hospital)");
+        break;
+      case "PHARMACY_ADMIN":
+        router.replace("/(app)/(pharmacy)");
+        break;
+      case "SUPER_ADMIN":
+        router.replace("/(app)/(admin)");
+        break;
+      default:
+        router.replace("/");
+    }
+  };
+
+  const googleMutation = useMutation({
+    mutationFn: (idToken) => apiClient.googleContinue(idToken, { role: "PATIENT" }),
+    onSuccess: (data) => {
+      completeLogin(data);
+    },
+    onError: (error) => {
+      Alert.alert(
+        t("signup_failed"),
+        String(error?.message || "Google sign up failed. Please try again."),
+      );
+    },
+  });
+
+  useEffect(() => {
+    if (!googleResponse) return;
+    if (googleResponse.type === "success") {
+      const idToken =
+        googleResponse?.params?.id_token ||
+        googleResponse?.authentication?.idToken;
+      if (!idToken) {
+        Alert.alert(
+          t("signup_failed"),
+          "Google signup was successful, but no ID token was returned.",
+        );
+        return;
+      }
+      googleMutation.mutate(idToken);
+      return;
+    }
+    if (googleResponse.type === "error") {
+      Alert.alert(
+        t("signup_failed"),
+        "Google sign up was cancelled or failed. Please try again.",
+      );
+    }
+  }, [googleResponse]);
 
   const validateStep = (currentStep) => {
     const newErrors = {};
@@ -188,6 +269,24 @@ export default function SignupScreen() {
     if (errors[field]) {
       setErrors((prev) => ({ ...prev, [field]: null }));
     }
+  };
+
+  const handleGoogleContinue = async () => {
+    if (!googleRequest) {
+      Alert.alert(
+        t("signup_failed"),
+        "Google Sign-In is not configured. Add Google client IDs in .env.",
+      );
+      return;
+    }
+    if (selectedRole && selectedRole !== "patient") {
+      Alert.alert(
+        "Role not supported",
+        "Google signup currently supports Patient accounts only. Use email signup for other roles.",
+      );
+      return;
+    }
+    await promptGoogleSignUp();
   };
 
   const renderRoleSelection = () => (
@@ -525,6 +624,35 @@ export default function SignupScreen() {
 
             {/* Bottom Actions */}
             <View style={{ paddingTop: 24 }}>
+              {step === 1 ? (
+                <TouchableOpacity
+                  onPress={handleGoogleContinue}
+                  disabled={googleMutation.isPending}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                    backgroundColor: theme.card,
+                    paddingVertical: 12,
+                    borderRadius: 12,
+                    alignItems: "center",
+                    marginBottom: 16,
+                    opacity: googleMutation.isPending ? 0.6 : 1,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontFamily: "Inter_600SemiBold",
+                      color: theme.text,
+                    }}
+                  >
+                    {googleMutation.isPending
+                      ? "Connecting Google..."
+                      : "Continue with Google"}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+
               <Button
                 title={step === 2 ? t("create_account") : t("next")}
                 onPress={handleNext}

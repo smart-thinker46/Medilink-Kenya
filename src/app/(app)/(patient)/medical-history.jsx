@@ -21,6 +21,7 @@ import {
   Filter,
   Sparkles,
   ShieldCheck,
+  Volume2,
 } from "lucide-react-native";
 import { Image } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -32,6 +33,7 @@ import { useToast } from "@/components/ToastProvider";
 import { useAuthStore } from "@/utils/auth/store";
 import apiClient from "@/utils/api";
 import { useI18n } from "@/utils/i18n";
+import useAiSpeechPlayer from "@/utils/useAiSpeechPlayer";
 
 export default function MedicalHistoryScreen() {
   const router = useRouter();
@@ -50,6 +52,10 @@ export default function MedicalHistoryScreen() {
       : "all";
   const [activeTab, setActiveTab] = useState(initialTab);
   const [aiSummary, setAiSummary] = useState(null);
+  const { speak: speakAiSummary, isSpeaking: aiSummarySpeaking } = useAiSpeechPlayer({
+    onWarn: (message) => showToast(message, "warning"),
+    onError: (message) => showToast(message, "error"),
+  });
 
   const tabs = [
     { id: "all", title: "All Records", icon: FileText },
@@ -70,6 +76,26 @@ export default function MedicalHistoryScreen() {
       showToast(error.message || "AI summary unavailable.", "error");
     },
   });
+
+  const getSummarySpeechText = (data) => {
+    if (!data) return "";
+    if (String(data?.speechText || "").trim()) return String(data.speechText).trim();
+    return [
+      String(data?.summary || "").trim(),
+      Array.isArray(data?.highlights) && data.highlights.length
+        ? `Highlights: ${data.highlights.slice(0, 4).join(". ")}`
+        : "",
+      Array.isArray(data?.risks) && data.risks.length
+        ? `Risks: ${data.risks.slice(0, 4).join(". ")}`
+        : "",
+      Array.isArray(data?.nextSteps) && data.nextSteps.length
+        ? `Next steps: ${data.nextSteps.slice(0, 4).join(". ")}`
+        : "",
+      String(data?.disclaimer || "").trim(),
+    ]
+      .filter(Boolean)
+      .join(". ");
+  };
   const accessRequestsQuery = useQuery({
     queryKey: ["medical-record-access-requests", patientId],
     queryFn: () =>
@@ -860,6 +886,28 @@ export default function MedicalHistoryScreen() {
               >
                 AI Summary
               </Text>
+              <TouchableOpacity
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  alignSelf: "flex-start",
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginBottom: 8,
+                  backgroundColor: theme.surface,
+                  opacity: aiSummarySpeaking ? 0.7 : 1,
+                }}
+                onPress={() => speakAiSummary(getSummarySpeechText(aiSummary))}
+                disabled={aiSummarySpeaking}
+              >
+                <Volume2 color={theme.iconColor} size={14} />
+                <Text style={{ marginLeft: 6, fontSize: 11, color: theme.textSecondary }}>
+                  {aiSummarySpeaking ? "Reading..." : "Read Summary"}
+                </Text>
+              </TouchableOpacity>
               <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 8 }}>
                 {aiSummary.summary}
               </Text>

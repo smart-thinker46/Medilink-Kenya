@@ -4,9 +4,22 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { MotiView } from "moti";
-import { CheckCircle, Ban, Mail, Search, MessageCircle, Video, Square, CheckSquare, Trash2 } from "lucide-react-native";
+import {
+  CheckCircle,
+  Ban,
+  Mail,
+  Search,
+  MessageCircle,
+  Video,
+  Square,
+  CheckSquare,
+  Trash2,
+  Mic,
+  Sparkles,
+} from "lucide-react-native";
 import { Picker } from "@react-native-picker/picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { useAudioRecorder, RecordingPresets } from "expo-audio";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -35,6 +48,11 @@ const accountStatusOptions = [
   { label: "Active", value: "active" },
   { label: "Suspended", value: "suspended" },
 ];
+const onlineOptions = [
+  { label: "All Presence", value: "" },
+  { label: "Online", value: "true" },
+  { label: "Offline", value: "false" },
+];
 const editableRoles = [
   "PATIENT",
   "MEDIC",
@@ -52,12 +70,28 @@ export default function AdminUsersScreen() {
   const { initiateCall } = useVideoCall();
   const { isUserOnline } = useOnlineUsers();
 
-  const [roleFilter, setRoleFilter] = useState(params?.role || "");
-  const [activeFilter, setActiveFilter] = useState("");
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const getParam = (value, fallback = "") => {
+    if (Array.isArray(value)) {
+      return String(value[0] ?? fallback);
+    }
+    return String(value ?? fallback);
+  };
+
+  const paramRole = getParam(params?.role, "");
+  const paramActive = getParam(params?.active, "");
+  const paramSearch = getParam(params?.search, "");
+  const paramStatus = getParam(params?.status, "");
+  const paramOnline = getParam(params?.online, "");
+  const paramStartDate = getParam(params?.startDate, "");
+  const paramEndDate = getParam(params?.endDate, "");
+
+  const [roleFilter, setRoleFilter] = useState(paramRole);
+  const [activeFilter, setActiveFilter] = useState(paramActive);
+  const [search, setSearch] = useState(paramSearch);
+  const [statusFilter, setStatusFilter] = useState(paramStatus);
+  const [onlineFilter, setOnlineFilter] = useState(paramOnline);
+  const [startDate, setStartDate] = useState(paramStartDate);
+  const [endDate, setEndDate] = useState(paramEndDate);
   const [expandedId, setExpandedId] = useState(null);
   const [editDrafts, setEditDrafts] = useState({});
   const [showCreate, setShowCreate] = useState(false);
@@ -84,10 +118,56 @@ export default function AdminUsersScreen() {
     userId: "",
     visible: false,
   });
+  const [aiUserResponse, setAiUserResponse] = useState(null);
+  const [isVoiceRecording, setIsVoiceRecording] = useState(false);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const webMediaRecorderRef = React.useRef(null);
+  const webMediaStreamRef = React.useRef(null);
+  const webAudioChunksRef = React.useRef([]);
 
   React.useEffect(() => {
     setPage(1);
-  }, [roleFilter, activeFilter, search, statusFilter, startDate, endDate, pageSize, sortOrder]);
+  }, [roleFilter, activeFilter, search, statusFilter, onlineFilter, startDate, endDate, pageSize, sortOrder]);
+
+  React.useEffect(() => {
+    if (
+      paramRole ||
+      paramActive ||
+      paramSearch ||
+      paramStatus ||
+      paramOnline ||
+      paramStartDate ||
+      paramEndDate
+    ) {
+      setRoleFilter(paramRole);
+      setActiveFilter(paramActive);
+      setSearch(paramSearch);
+      setStatusFilter(paramStatus);
+      setOnlineFilter(paramOnline);
+      setStartDate(paramStartDate);
+      setEndDate(paramEndDate);
+      setPage(1);
+    }
+  }, [paramRole, paramActive, paramSearch, paramStatus, paramOnline, paramStartDate, paramEndDate]);
+
+  React.useEffect(() => {
+    return () => {
+      if (isVoiceRecording) {
+        audioRecorder.stop().catch(() => undefined);
+      }
+      try {
+        if (webMediaRecorderRef.current?.state === "recording") {
+          webMediaRecorderRef.current.stop();
+        }
+      } catch {
+        // ignore cleanup errors
+      }
+      const stream = webMediaStreamRef.current;
+      if (stream?.getTracks) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, [audioRecorder, isVoiceRecording]);
 
   const applyPreset = (days) => {
     if (!days) {
@@ -106,13 +186,26 @@ export default function AdminUsersScreen() {
   const queryClient = useQueryClient();
 
   const usersQuery = useQuery({
-    queryKey: ["admin-users", roleFilter, activeFilter, search, page, pageSize],
+    queryKey: [
+      "admin-users",
+      roleFilter,
+      activeFilter,
+      search,
+      statusFilter,
+      onlineFilter,
+      startDate,
+      endDate,
+      sortOrder,
+      page,
+      pageSize,
+    ],
     queryFn: () =>
       apiClient.getAdminUsers({
         role: roleFilter || undefined,
         active: activeFilter || undefined,
         search: search || undefined,
         status: statusFilter || undefined,
+        online: onlineFilter || undefined,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
         sort: sortOrder,
@@ -130,6 +223,12 @@ export default function AdminUsersScreen() {
     : usersResponse.total || users.length;
 
   const filteredUsers = useMemo(() => users, [users]);
+  const currentPageIds = useMemo(
+    () => filteredUsers.map((user) => user.id).filter(Boolean),
+    [filteredUsers],
+  );
+  const allCurrentPageSelected =
+    currentPageIds.length > 0 && currentPageIds.every((id) => selectedIds.has(id));
 
   const totalPages = Math.max(1, Math.ceil(totalUsers / pageSize));
 
@@ -176,9 +275,236 @@ export default function AdminUsersScreen() {
     },
   });
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (payload) => apiClient.adminDeleteUsersBulk(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+  });
+
   const sendEmailMutation = useMutation({
     mutationFn: (payload) => apiClient.adminSendEmail(payload),
   });
+
+  const applyAiUserSuggestionFilters = (assistantData, sourceQuery = "") => {
+    const filters = assistantData?.suggestedFilters || {};
+    const queryText = String(sourceQuery || "").trim();
+    const lowerQuery = queryText.toLowerCase();
+
+    if (filters?.role) setRoleFilter(String(filters.role).toUpperCase());
+    if (filters?.status) setStatusFilter(String(filters.status).toLowerCase());
+    if (typeof filters?.subscriptionActive === "boolean") {
+      setActiveFilter(filters.subscriptionActive ? "true" : "false");
+    }
+
+    const explicitOnline =
+      typeof filters?.online === "boolean"
+        ? filters.online
+        : lowerQuery.includes("online")
+          ? true
+          : lowerQuery.includes("offline")
+            ? false
+            : null;
+    if (explicitOnline !== null) {
+      setOnlineFilter(explicitOnline ? "true" : "false");
+    }
+
+    const topResult = Array.isArray(assistantData?.results) ? assistantData.results[0] : null;
+    const fallbackSearch =
+      String(topResult?.fullName || topResult?.name || topResult?.email || "").trim();
+    const inferredSearch = String(filters?.search || fallbackSearch || queryText).trim();
+    if (inferredSearch) {
+      setSearch(inferredSearch);
+    }
+    setPage(1);
+  };
+
+  const aiUserSearchMutation = useMutation({
+    mutationFn: (queryText) => apiClient.aiAdminUsersAssistant({ query: queryText }),
+    onSuccess: (data, queryText) => {
+      setAiUserResponse(data || null);
+      applyAiUserSuggestionFilters(data || {}, queryText);
+      const matched = Number(data?.totalMatched || 0);
+      showToast(
+        matched > 0
+          ? `AI found ${matched} matching user(s).`
+          : "AI applied filters, but no users matched.",
+        matched > 0 ? "success" : "warning",
+      );
+    },
+    onError: (error) => {
+      showToast(error?.message || "AI user search failed.", "error");
+    },
+  });
+
+  const sttVoiceSearchMutation = useMutation({
+    mutationFn: (input) => {
+      if (Platform.OS === "web") {
+        if (typeof Blob !== "undefined" && input instanceof Blob) {
+          return apiClient.aiVoiceStt({
+            file: input,
+            name: "admin-user-search.webm",
+            type: input.type || "audio/webm",
+            language: "en",
+          });
+        }
+        throw new Error("Web voice search recording is missing.");
+      }
+      const uri = String(input || "").trim();
+      if (!uri) {
+        throw new Error("Audio recording not found.");
+      }
+      return apiClient.aiVoiceStt({
+        uri,
+        name: "admin-user-search.m4a",
+        type: "audio/m4a",
+        language: "en",
+      });
+    },
+    onSuccess: (data) => {
+      const transcript = String(data?.text || "").trim();
+      if (!transcript) {
+        showToast("No speech transcript returned.", "warning");
+        return;
+      }
+      setSearch(transcript);
+      aiUserSearchMutation.mutate(transcript);
+    },
+    onError: (error) => {
+      showToast(error?.message || "Voice transcription failed.", "error");
+    },
+  });
+
+  const runAiSearchFromText = () => {
+    const queryText = String(search || "").trim();
+    if (!queryText) {
+      showToast("Type what user you want to find first.", "warning");
+      return;
+    }
+    aiUserSearchMutation.mutate(queryText);
+  };
+
+  const stopWebRecorder = async () => {
+    const recorder = webMediaRecorderRef.current;
+    if (!recorder) {
+      throw new Error("Recorder not initialized.");
+    }
+    const stream = webMediaStreamRef.current;
+    return new Promise((resolve, reject) => {
+      recorder.onstop = () => {
+        try {
+          const audioBlob = new Blob(webAudioChunksRef.current || [], {
+            type: recorder.mimeType || "audio/webm",
+          });
+          webAudioChunksRef.current = [];
+          webMediaRecorderRef.current = null;
+          if (stream?.getTracks) {
+            stream.getTracks().forEach((track) => track.stop());
+          }
+          webMediaStreamRef.current = null;
+          resolve(audioBlob);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      recorder.onerror = () => {
+        reject(new Error("Web recorder failed."));
+      };
+      try {
+        recorder.stop();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+
+  const startWebRecorder = async () => {
+    const mediaDevices = globalThis?.navigator?.mediaDevices;
+    const MediaRecorderApi = globalThis?.MediaRecorder;
+    if (!mediaDevices?.getUserMedia || !MediaRecorderApi) {
+      throw new Error("Browser voice recording is not supported.");
+    }
+    const stream = await mediaDevices.getUserMedia({ audio: true });
+    webMediaStreamRef.current = stream;
+    const mimeCandidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/ogg;codecs=opus",
+    ];
+    const selectedMime = mimeCandidates.find((mime) => {
+      try {
+        return typeof MediaRecorderApi.isTypeSupported === "function"
+          ? MediaRecorderApi.isTypeSupported(mime)
+          : false;
+      } catch {
+        return false;
+      }
+    });
+    const recorder = selectedMime
+      ? new MediaRecorderApi(stream, { mimeType: selectedMime })
+      : new MediaRecorderApi(stream);
+
+    webAudioChunksRef.current = [];
+    recorder.ondataavailable = (event) => {
+      if (event?.data && event.data.size > 0) {
+        webAudioChunksRef.current.push(event.data);
+      }
+    };
+    recorder.start();
+    webMediaRecorderRef.current = recorder;
+  };
+
+  const toggleVoiceSearch = async () => {
+    if (sttVoiceSearchMutation.isPending || aiUserSearchMutation.isPending) return;
+    if (Platform.OS === "web") {
+      if (isVoiceRecording) {
+        try {
+          const audioBlob = await stopWebRecorder();
+          setIsVoiceRecording(false);
+          sttVoiceSearchMutation.mutate(audioBlob);
+        } catch (error) {
+          setIsVoiceRecording(false);
+          showToast(error?.message || "Failed to stop web voice recording.", "error");
+        }
+        return;
+      }
+      try {
+        await startWebRecorder();
+        setIsVoiceRecording(true);
+        showToast("Listening... click mic again to stop.", "info");
+      } catch (error) {
+        setIsVoiceRecording(false);
+        showToast(error?.message || "Unable to start web voice search.", "error");
+      }
+      return;
+    }
+    if (isVoiceRecording) {
+      try {
+        const recorded = await audioRecorder.stop();
+        setIsVoiceRecording(false);
+        const uri = String(recorded?.uri || "").trim();
+        if (!uri) {
+          showToast("No recording captured. Try again.", "warning");
+          return;
+        }
+        sttVoiceSearchMutation.mutate(uri);
+      } catch (error) {
+        setIsVoiceRecording(false);
+        showToast(error?.message || "Failed to stop recording.", "error");
+      }
+      return;
+    }
+
+    try {
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+      setIsVoiceRecording(true);
+      showToast("Listening... tap mic again to stop.", "info");
+    } catch (error) {
+      setIsVoiceRecording(false);
+      showToast(error?.message || "Unable to start voice search.", "error");
+    }
+  };
 
   const handleVerify = async (userId, verified) => {
     try {
@@ -221,6 +547,18 @@ export default function AdminUsersScreen() {
     setSelectedIds(new Set());
   };
 
+  const toggleSelectAllCurrentPage = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allCurrentPageSelected) {
+        currentPageIds.forEach((id) => next.delete(id));
+      } else {
+        currentPageIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
   const bulkUpdate = async (blocked) => {
     if (selectedIds.size === 0) {
       showToast("Select at least one user.", "warning");
@@ -254,6 +592,96 @@ export default function AdminUsersScreen() {
     } catch (error) {
       showToast(error.message || "Bulk approval failed.", "error");
     }
+  };
+
+  const handleBulkDeleteSelected = () => {
+    if (selectedIds.size === 0) {
+      showToast("Select at least one user.", "warning");
+      return;
+    }
+    Alert.alert(
+      "Delete selected users",
+      `Delete ${selectedIds.size} selected users? This action is permanent.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const result = await bulkDeleteMutation.mutateAsync({
+                userIds: Array.from(selectedIds),
+              });
+              const deletedCount = Number(result?.deletedCount || 0);
+              const failedCount = Array.isArray(result?.failed) ? result.failed.length : 0;
+              if (deletedCount > 0) {
+                showToast(
+                  failedCount > 0
+                    ? `Deleted ${deletedCount} user(s), ${failedCount} failed.`
+                    : `Deleted ${deletedCount} user(s).`,
+                  failedCount > 0 ? "warning" : "success",
+                );
+              } else {
+                showToast("No users were deleted.", "warning");
+              }
+              clearSelection();
+            } catch (error) {
+              showToast(error?.message || "Bulk delete failed.", "error");
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleDeleteAllFiltered = () => {
+    if (totalUsers === 0) {
+      showToast("No users match the current filters.", "warning");
+      return;
+    }
+    Alert.alert(
+      "Delete all filtered users",
+      `Delete all ${totalUsers} users matching current filters? This action is permanent.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete All",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const result = await bulkDeleteMutation.mutateAsync({
+                deleteAll: true,
+                filters: {
+                  role: roleFilter || undefined,
+                  active: activeFilter || undefined,
+                  search: search || undefined,
+                  status: statusFilter || undefined,
+                  online: onlineFilter || undefined,
+                  startDate: startDate || undefined,
+                  endDate: endDate || undefined,
+                  sort: sortOrder || undefined,
+                },
+              });
+              const deletedCount = Number(result?.deletedCount || 0);
+              const failedCount = Array.isArray(result?.failed) ? result.failed.length : 0;
+              if (deletedCount > 0) {
+                showToast(
+                  failedCount > 0
+                    ? `Deleted ${deletedCount} user(s), ${failedCount} failed.`
+                    : `Deleted ${deletedCount} user(s).`,
+                  failedCount > 0 ? "warning" : "success",
+                );
+              } else {
+                showToast("No users were deleted.", "warning");
+              }
+              clearSelection();
+            } catch (error) {
+              showToast(error?.message || "Delete-all failed.", "error");
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleSaveUser = async (user) => {
@@ -472,26 +900,160 @@ export default function AdminUsersScreen() {
             borderRadius: 14,
             paddingHorizontal: 12,
             paddingVertical: 10,
-            flexDirection: "row",
+            flexDirection: "column",
             alignItems: "center",
             marginBottom: 14,
           }}
         >
-          <Search color={theme.iconColor} size={18} />
-          <TextInput
-            placeholder="Search by name or email"
-            placeholderTextColor={theme.textSecondary}
-            value={search}
-            onChangeText={setSearch}
-            style={{
-              marginLeft: 10,
-              flex: 1,
-              color: theme.text,
-              fontSize: 14,
-              fontFamily: "Inter_400Regular",
-            }}
-          />
+          <View style={{ flexDirection: "row", alignItems: "center", width: "100%" }}>
+            <Search color={theme.iconColor} size={18} />
+            <TextInput
+              placeholder="Search by name/email or type AI prompt"
+              placeholderTextColor={theme.textSecondary}
+              value={search}
+              onChangeText={setSearch}
+              style={{
+                marginLeft: 10,
+                flex: 1,
+                color: theme.text,
+                fontSize: 14,
+                fontFamily: "Inter_400Regular",
+              }}
+            />
+          </View>
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 10, width: "100%" }}>
+            <TouchableOpacity
+              onPress={runAiSearchFromText}
+              disabled={aiUserSearchMutation.isPending || sttVoiceSearchMutation.isPending}
+              style={{
+                flex: 1,
+                height: 38,
+                borderRadius: 10,
+                alignItems: "center",
+                justifyContent: "center",
+                flexDirection: "row",
+                backgroundColor: theme.primary,
+                opacity:
+                  aiUserSearchMutation.isPending || sttVoiceSearchMutation.isPending ? 0.7 : 1,
+              }}
+            >
+              <Sparkles color="#fff" size={14} />
+              <Text
+                style={{
+                  marginLeft: 6,
+                  color: "#fff",
+                  fontSize: 12,
+                  fontFamily: "Inter_600SemiBold",
+                }}
+              >
+                {aiUserSearchMutation.isPending ? "AI Finding..." : "AI Find User"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={toggleVoiceSearch}
+              disabled={sttVoiceSearchMutation.isPending || aiUserSearchMutation.isPending}
+              style={{
+                width: 46,
+                height: 38,
+                borderRadius: 10,
+                alignItems: "center",
+                justifyContent: "center",
+                borderWidth: 1,
+                borderColor: isVoiceRecording ? theme.error : theme.border,
+                backgroundColor: isVoiceRecording ? `${theme.error}22` : theme.card,
+                opacity:
+                  sttVoiceSearchMutation.isPending || aiUserSearchMutation.isPending ? 0.7 : 1,
+              }}
+            >
+              <Mic color={isVoiceRecording ? theme.error : theme.iconColor} size={16} />
+            </TouchableOpacity>
+          </View>
+          {(sttVoiceSearchMutation.isPending || isVoiceRecording) && (
+            <Text
+              style={{
+                marginTop: 8,
+                width: "100%",
+                color: theme.textSecondary,
+                fontSize: 11,
+                fontFamily: "Inter_500Medium",
+              }}
+            >
+              {isVoiceRecording
+                ? "Recording voice query..."
+                : "Transcribing and searching users..."}
+            </Text>
+          )}
         </View>
+
+        {aiUserResponse && (
+          <View
+            style={{
+              backgroundColor: theme.card,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: theme.border,
+              padding: 10,
+              marginTop: -4,
+              marginBottom: 14,
+            }}
+          >
+            <Text
+              style={{
+                color: theme.text,
+                fontSize: 12,
+                fontFamily: "Inter_600SemiBold",
+              }}
+            >
+              AI Result: {Number(aiUserResponse?.totalMatched || 0)} match(es)
+            </Text>
+            {String(aiUserResponse?.notes || "").trim() ? (
+              <Text
+                style={{
+                  marginTop: 4,
+                  color: theme.textSecondary,
+                  fontSize: 11,
+                  fontFamily: "Inter_400Regular",
+                }}
+              >
+                {String(aiUserResponse?.notes || "").trim()}
+              </Text>
+            ) : null}
+            {Array.isArray(aiUserResponse?.results) && aiUserResponse.results.length > 0 ? (
+              <Text
+                style={{
+                  marginTop: 6,
+                  color: theme.textSecondary,
+                  fontSize: 11,
+                }}
+              >
+                Top: {aiUserResponse.results.slice(0, 3).map((item) => item?.fullName || item?.name || item?.email).filter(Boolean).join(", ")}
+              </Text>
+            ) : null}
+            <TouchableOpacity
+              onPress={() => setAiUserResponse(null)}
+              style={{
+                marginTop: 8,
+                alignSelf: "flex-start",
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 8,
+                paddingVertical: 5,
+                paddingHorizontal: 8,
+                backgroundColor: theme.surface,
+              }}
+            >
+              <Text
+                style={{
+                  color: theme.textSecondary,
+                  fontSize: 11,
+                  fontFamily: "Inter_500Medium",
+                }}
+              >
+                Clear AI Result
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
           {roleOptions.map((option) => (
@@ -643,6 +1205,69 @@ export default function AdminUsersScreen() {
           ))}
         </View>
 
+        <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
+          {onlineOptions.map((option) => (
+            <TouchableOpacity
+              key={option.value}
+              style={{
+                paddingVertical: 8,
+                paddingHorizontal: 12,
+                borderRadius: 12,
+                backgroundColor:
+                  onlineFilter === option.value ? `${theme.primary}20` : theme.card,
+                borderWidth: 1,
+                borderColor:
+                  onlineFilter === option.value ? theme.primary : theme.border,
+              }}
+              onPress={() => setOnlineFilter(option.value)}
+            >
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontFamily: "Inter_600SemiBold",
+                  color:
+                    onlineFilter === option.value ? theme.primary : theme.textSecondary,
+                }}
+              >
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity
+            style={{
+              paddingVertical: 8,
+              paddingHorizontal: 12,
+              borderRadius: 12,
+              backgroundColor:
+                roleFilter === "PATIENT" && onlineFilter === "true"
+                  ? `${theme.success}22`
+                  : theme.card,
+              borderWidth: 1,
+              borderColor:
+                roleFilter === "PATIENT" && onlineFilter === "true"
+                  ? theme.success
+                  : theme.border,
+            }}
+            onPress={() => {
+              setRoleFilter("PATIENT");
+              setOnlineFilter("true");
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 12,
+                fontFamily: "Inter_600SemiBold",
+                color:
+                  roleFilter === "PATIENT" && onlineFilter === "true"
+                    ? theme.success
+                    : theme.textSecondary,
+              }}
+            >
+              Online Patients
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={{ flexDirection: "row", gap: 12, marginBottom: 16 }}>
           <TouchableOpacity
             onPress={() => setShowStartPicker(true)}
@@ -771,6 +1396,47 @@ export default function AdminUsersScreen() {
           ))}
         </View>
 
+        <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
+          <TouchableOpacity
+            style={{
+              paddingVertical: 8,
+              paddingHorizontal: 12,
+              borderRadius: 12,
+              backgroundColor: allCurrentPageSelected ? `${theme.primary}20` : theme.card,
+              borderWidth: 1,
+              borderColor: allCurrentPageSelected ? theme.primary : theme.border,
+            }}
+            onPress={toggleSelectAllCurrentPage}
+            disabled={currentPageIds.length === 0}
+          >
+            <Text
+              style={{
+                fontSize: 12,
+                fontFamily: "Inter_600SemiBold",
+                color: allCurrentPageSelected ? theme.primary : theme.textSecondary,
+              }}
+            >
+              {allCurrentPageSelected ? "Unselect Page" : "Select Page"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{
+              paddingVertical: 8,
+              paddingHorizontal: 12,
+              borderRadius: 12,
+              backgroundColor: `${theme.error}15`,
+              borderWidth: 1,
+              borderColor: `${theme.error}40`,
+            }}
+            onPress={handleDeleteAllFiltered}
+            disabled={totalUsers === 0 || bulkDeleteMutation.isPending}
+          >
+            <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: theme.error }}>
+              {bulkDeleteMutation.isPending ? "Deleting..." : "Delete All Filtered"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {selectedIds.size > 0 && (
           <View
             style={{
@@ -821,6 +1487,22 @@ export default function AdminUsersScreen() {
               onPress={() => bulkUpdate(false)}
             >
               <Text style={{ fontSize: 11, color: theme.success }}>Unblock</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{
+                paddingVertical: 6,
+                paddingHorizontal: 10,
+                borderRadius: 10,
+                backgroundColor: `${theme.error}15`,
+                borderWidth: 1,
+                borderColor: `${theme.error}40`,
+              }}
+              onPress={handleBulkDeleteSelected}
+              disabled={bulkDeleteMutation.isPending}
+            >
+              <Text style={{ fontSize: 11, color: theme.error }}>
+                {bulkDeleteMutation.isPending ? "Deleting..." : "Delete"}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={{

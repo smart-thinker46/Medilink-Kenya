@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { MotiView as BaseMotiView } from "moti";
 import { ArrowLeft, Mail, Lock } from "lucide-react-native";
 import { useMutation } from "@tanstack/react-query";
+import * as Google from "expo-auth-session/providers/google";
+import * as WebBrowser from "expo-web-browser";
 
 import Input from "@/components/Input";
 import Button from "@/components/Button";
@@ -28,6 +30,8 @@ const MotiView =
         <View {...rest}>{children}</View>
       )
     : BaseMotiView;
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -46,6 +50,44 @@ export default function LoginScreen() {
 
   const [errors, setErrors] = useState({});
 
+  const [googleRequest, googleResponse, promptGoogleSignIn] =
+    Google.useIdTokenAuthRequest({
+      expoClientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID || undefined,
+      androidClientId:
+        process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || undefined,
+      iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || undefined,
+      webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || undefined,
+    });
+
+  const completeLogin = (data) => {
+    setAuth({
+      token: data?.accessToken,
+      user: data?.user,
+      tenantId: data?.tenantId,
+      tenant: data?.tenant,
+    });
+    const role = data?.user?.role?.toUpperCase?.() || data?.user?.role;
+    switch (role) {
+      case "PATIENT":
+        router.replace("/(app)/(patient)");
+        break;
+      case "MEDIC":
+        router.replace("/(app)/(medic)");
+        break;
+      case "HOSPITAL_ADMIN":
+        router.replace("/(app)/(hospital)");
+        break;
+      case "PHARMACY_ADMIN":
+        router.replace("/(app)/(pharmacy)");
+        break;
+      case "SUPER_ADMIN":
+        router.replace("/(app)/(admin)");
+        break;
+      default:
+        router.replace("/");
+    }
+  };
+
   const loginMutation = useMutation({
     mutationFn: ({ email, password, otp, challengeId }) =>
       apiClient.login(email.trim().toLowerCase(), password, otp, challengeId),
@@ -59,33 +101,7 @@ export default function LoginScreen() {
         );
         return;
       }
-
-      setAuth({
-        token: data?.accessToken,
-        user: data?.user,
-        tenantId: data?.tenantId,
-        tenant: data?.tenant,
-      });
-      const role = data?.user?.role?.toUpperCase?.() || data?.user?.role;
-      switch (role) {
-        case "PATIENT":
-          router.replace("/(app)/(patient)");
-          break;
-        case "MEDIC":
-          router.replace("/(app)/(medic)");
-          break;
-        case "HOSPITAL_ADMIN":
-          router.replace("/(app)/(hospital)");
-          break;
-        case "PHARMACY_ADMIN":
-          router.replace("/(app)/(pharmacy)");
-          break;
-        case "SUPER_ADMIN":
-          router.replace("/(app)/(admin)");
-          break;
-        default:
-          router.replace("/");
-      }
+      completeLogin(data);
     },
     onError: (error) => {
       const message = String(error?.message || "Please try again");
@@ -103,6 +119,43 @@ export default function LoginScreen() {
       Alert.alert(t("login_failed"), message);
     },
   });
+
+  const googleMutation = useMutation({
+    mutationFn: (idToken) => apiClient.googleContinue(idToken),
+    onSuccess: (data) => {
+      completeLogin(data);
+    },
+    onError: (error) => {
+      Alert.alert(
+        t("login_failed"),
+        String(error?.message || "Google sign in failed. Please try again."),
+      );
+    },
+  });
+
+  useEffect(() => {
+    if (!googleResponse) return;
+    if (googleResponse.type === "success") {
+      const idToken =
+        googleResponse?.params?.id_token ||
+        googleResponse?.authentication?.idToken;
+      if (!idToken) {
+        Alert.alert(
+          t("login_failed"),
+          "Google login was successful, but no ID token was returned.",
+        );
+        return;
+      }
+      googleMutation.mutate(idToken);
+      return;
+    }
+    if (googleResponse.type === "error") {
+      Alert.alert(
+        t("login_failed"),
+        "Google sign in was cancelled or failed. Please try again.",
+      );
+    }
+  }, [googleResponse]);
 
   const validateForm = () => {
     const newErrors = {};
@@ -146,6 +199,17 @@ export default function LoginScreen() {
       email: formData.email,
       password: formData.password,
     });
+  };
+
+  const handleGoogleContinue = async () => {
+    if (!googleRequest) {
+      Alert.alert(
+        t("login_failed"),
+        "Google Sign-In is not configured. Add Google client IDs in .env.",
+      );
+      return;
+    }
+    await promptGoogleSignIn();
   };
 
   const handleInputChange = (field, value) => {
@@ -368,6 +432,37 @@ export default function LoginScreen() {
                 loading={loginMutation.isLoading}
                 style={{ marginBottom: 24 }}
               />
+
+              {!otpChallengeId ? (
+                <>
+                  <TouchableOpacity
+                    onPress={handleGoogleContinue}
+                    disabled={googleMutation.isPending}
+                    style={{
+                      borderWidth: 1,
+                      borderColor: theme.border,
+                      backgroundColor: theme.card,
+                      paddingVertical: 12,
+                      borderRadius: 12,
+                      alignItems: "center",
+                      marginBottom: 18,
+                      opacity: googleMutation.isPending ? 0.6 : 1,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 14,
+                        fontFamily: "Inter_600SemiBold",
+                        color: theme.text,
+                      }}
+                    >
+                      {googleMutation.isPending
+                        ? "Connecting Google..."
+                        : "Continue with Google"}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : null}
 
               {/* Sign Up Link */}
               <View

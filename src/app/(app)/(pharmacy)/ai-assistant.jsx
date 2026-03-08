@@ -19,6 +19,7 @@ import {
   PackageSearch,
   BarChart3,
   MessageCircle,
+  Volume2,
 } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
@@ -28,6 +29,7 @@ import { useAuthStore } from "@/utils/auth/store";
 import apiClient from "@/utils/api";
 import usePharmacyScope from "@/utils/usePharmacyScope";
 import PharmacyScopeSelector from "@/components/PharmacyScopeSelector";
+import useAiSpeechPlayer from "@/utils/useAiSpeechPlayer";
 
 const formatList = (items = []) =>
   (Array.isArray(items) ? items : [])
@@ -55,6 +57,10 @@ export default function PharmacyAiAssistantScreen() {
   const [searchResults, setSearchResults] = useState([]);
   const [assistantAnswer, setAssistantAnswer] = useState("");
   const [analyticsResult, setAnalyticsResult] = useState(null);
+  const { speak: speakAiText, isSpeaking: aiSpeaking } = useAiSpeechPlayer({
+    onWarn: (message) => showToast(message, "warning"),
+    onError: (message) => showToast(message, "error"),
+  });
 
   const aiSettingsQuery = useQuery({
     queryKey: ["ai-settings", "pharmacy-ai-assistant"],
@@ -110,7 +116,7 @@ export default function PharmacyAiAssistantScreen() {
   const isPremium = Boolean(aiState?.isPremium);
   const aiEnabled = Boolean(aiState?.aiEnabled);
   const canUse = Boolean(aiState?.canUse);
-  const provider = String(aiState?.provider || "openai").toUpperCase();
+  const providerLabel = String(aiState?.displayProvider || "Medilink AI");
   const blockedReason = String(aiState?.blockedReason || "");
 
   const products = Array.isArray(productsQuery.data) ? productsQuery.data : [];
@@ -187,6 +193,25 @@ Low stock count: ${lowStockProducts.length}
 Pending orders: ${pendingOrders.length}
 Provide top 5 priority actions for the next 7 days.`;
 
+  const getAnalyticsSpeechText = (data) => {
+    if (!data) return "";
+    if (String(data?.speechText || "").trim()) return String(data.speechText).trim();
+    return [
+      String(data?.summary || "").trim(),
+      Array.isArray(data?.insights) && data.insights.length
+        ? `Insights: ${data.insights.slice(0, 4).join(". ")}`
+        : "",
+      Array.isArray(data?.alerts) && data.alerts.length
+        ? `Alerts: ${data.alerts.slice(0, 4).join(". ")}`
+        : "",
+      Array.isArray(data?.recommendations) && data.recommendations.length
+        ? `Recommendations: ${data.recommendations.slice(0, 4).join(". ")}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(". ");
+  };
+
   return (
     <ScreenLayout>
       <ScrollView
@@ -219,7 +244,7 @@ Provide top 5 priority actions for the next 7 days.`;
               Pharmacy AI
             </Text>
             <Text style={{ marginTop: 2, fontSize: 12, color: theme.textSecondary }}>
-              Provider: {provider}
+              Powered by {providerLabel}
             </Text>
           </View>
         </View>
@@ -548,6 +573,28 @@ Provide top 5 priority actions for the next 7 days.`;
                 backgroundColor: theme.surface,
               }}
             >
+              <TouchableOpacity
+                onPress={() => speakAiText(getAnalyticsSpeechText(analyticsResult))}
+                disabled={aiSpeaking}
+                style={{
+                  alignSelf: "flex-start",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginBottom: 8,
+                  backgroundColor: theme.card,
+                  opacity: aiSpeaking ? 0.7 : 1,
+                }}
+              >
+                <Volume2 color={theme.iconColor} size={14} />
+                <Text style={{ marginLeft: 6, fontSize: 11, color: theme.textSecondary }}>
+                  {aiSpeaking ? "Reading..." : "Read Summary"}
+                </Text>
+              </TouchableOpacity>
               <Text style={{ fontSize: 13, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
                 Summary
               </Text>

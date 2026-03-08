@@ -168,6 +168,14 @@ export default function PharmacyHomeScreen() {
       onPress: () => router.push("/(app)/(pharmacy)/ai-assistant"),
     },
     {
+      id: "ai-finder",
+      title: "AI Finder",
+      description: "Find medicines, pharmacies, medics",
+      icon: Sparkles,
+      color: theme.info,
+      onPress: () => router.push("/(app)/(shared)/ai-finder"),
+    },
+    {
       id: "analytics",
       title: "Analytics",
       description: "Store performance",
@@ -190,6 +198,7 @@ export default function PharmacyHomeScreen() {
     { key: "orders", title: "Orders", href: "/(app)/(pharmacy)/orders", icon: ClipboardList },
     { key: "products", title: "Products", href: "/(app)/(pharmacy)/products", icon: Package },
     { key: "pos", title: "POS", href: "/(app)/(pharmacy)/pos", icon: ShoppingCart },
+    { key: "ai-finder", title: "AI Finder", href: "/(app)/(shared)/ai-finder", icon: Sparkles },
     { key: "analytics", title: "Analytics", href: "/(app)/(pharmacy)/analytics", icon: PieChart },
     { key: "stock", title: "Stock History", href: "/(app)/(pharmacy)/stock-movements", icon: Package },
     { key: "location", title: "Location", href: "/(app)/(shared)/location", icon: MapPin },

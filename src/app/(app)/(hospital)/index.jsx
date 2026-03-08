@@ -26,6 +26,7 @@ import {
   Settings,
   Crown,
   Package,
+  Sparkles,
 } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
@@ -137,6 +138,14 @@ export default function HospitalHomeScreen() {
       icon: DollarSign,
       color: theme.warning,
       onPress: () => router.push("/(app)/(hospital)/payments"),
+    },
+    {
+      id: "ai-finder",
+      title: "AI Finder",
+      description: "Find medicines, pharmacies, medics",
+      icon: Sparkles,
+      color: theme.info,
+      onPress: () => router.push("/(app)/(shared)/ai-finder"),
     },
   ];
 

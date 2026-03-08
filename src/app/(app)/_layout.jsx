@@ -80,6 +80,7 @@ export default function AppLayout() {
       <Stack.Screen name="(hospital)" />
       <Stack.Screen name="(pharmacy)" />
       <Stack.Screen name="(admin)" />
+      <Stack.Screen name="(shared)" />
     </Stack>
   );
 }

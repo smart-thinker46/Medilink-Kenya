@@ -27,6 +27,7 @@ import {
   Video,
   Settings,
   ShoppingCart,
+  Sparkles,
 } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
@@ -173,6 +174,14 @@ export default function MedicHomeScreen() {
       onPress: () => router.push("/(app)/(medic)/pharmacy-marketplace"),
     },
     {
+      id: "ai-finder",
+      title: "AI Finder",
+      description: "Find medicines, pharmacies, medics",
+      icon: Sparkles,
+      color: theme.info,
+      onPress: () => router.push("/(app)/(shared)/ai-finder"),
+    },
+    {
       id: "analytics",
       title: "Analytics",
       description: "Performance insights",
@@ -203,6 +212,7 @@ export default function MedicHomeScreen() {
     { key: "appointments", title: "Appointments", href: "/(app)/(medic)/appointments", icon: Calendar },
     { key: "shifts", title: "Shifts", href: "/(app)/(medic)/shifts", icon: Briefcase },
     { key: "pharmacy", title: "Pharmacy", href: "/(app)/(medic)/pharmacy-marketplace", icon: ShoppingCart },
+    { key: "ai-finder", title: "AI Finder", href: "/(app)/(shared)/ai-finder", icon: Sparkles },
     { key: "analytics", title: "Analytics", href: "/(app)/(medic)/analytics", icon: PieChart },
     { key: "payments", title: "Payments", href: "/(app)/(medic)/payments", icon: CreditCard },
     { key: "chat", title: "Chat", href: "/(app)/(shared)/conversations", icon: MessageCircle },

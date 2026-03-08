@@ -36,7 +36,7 @@ export default function PatientTabLayout() {
 
   const moreLinks = [
     { key: "ai-assistant", title: "AI Assistant", href: "/(app)/(patient)/ai-assistant", icon: Sparkles },
-    { key: "ai-voice", title: "Voice AI", href: "/(app)/(patient)/ai-voice", icon: Mic },
+    { key: "ai-voice", title: "Voice Assistant", href: "/(app)/(patient)/ai-voice", icon: Mic },
     { key: "pharmacy", title: "Pharmacy", href: "/(app)/(patient)/pharmacy", icon: ShoppingBag },
     { key: "book", title: "Book Appointment", href: "/(app)/(patient)/book-appointment", icon: PlusCircle },
     { key: "records", title: "Records", href: "/(app)/(patient)/medical-history", icon: FileText },
