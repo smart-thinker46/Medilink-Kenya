@@ -50,13 +50,29 @@ export default function LoginScreen() {
 
   const [errors, setErrors] = useState({});
 
+  const googleClientIds = {
+    expo: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID || "",
+    android: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || "",
+    ios: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || "",
+    web: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "",
+  };
+
+  const isGoogleConfigured =
+    Platform.OS === "web"
+      ? Boolean(googleClientIds.web)
+      : Boolean(
+          googleClientIds.expo ||
+            googleClientIds.android ||
+            googleClientIds.ios,
+        );
+
   const [googleRequest, googleResponse, promptGoogleSignIn] =
     Google.useIdTokenAuthRequest({
-      expoClientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID || undefined,
-      androidClientId:
-        process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || undefined,
-      iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || undefined,
-      webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || undefined,
+      expoClientId: googleClientIds.expo || undefined,
+      androidClientId: googleClientIds.android || undefined,
+      iosClientId: googleClientIds.ios || undefined,
+      // Keep hook stable on web when env is missing; action remains blocked below.
+      webClientId: googleClientIds.web || "MISSING_WEB_CLIENT_ID",
     });
 
   const completeLogin = (data) => {
@@ -202,6 +218,15 @@ export default function LoginScreen() {
   };
 
   const handleGoogleContinue = async () => {
+    if (!isGoogleConfigured) {
+      Alert.alert(
+        t("login_failed"),
+        Platform.OS === "web"
+          ? "Google Sign-In is not configured for web. Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID."
+          : "Google Sign-In is not configured for this app build.",
+      );
+      return;
+    }
     if (!googleRequest) {
       Alert.alert(
         t("login_failed"),
@@ -437,7 +462,7 @@ export default function LoginScreen() {
                 <>
                   <TouchableOpacity
                     onPress={handleGoogleContinue}
-                    disabled={googleMutation.isPending}
+                    disabled={googleMutation.isPending || !isGoogleConfigured}
                     style={{
                       borderWidth: 1,
                       borderColor: theme.border,
@@ -446,7 +471,7 @@ export default function LoginScreen() {
                       borderRadius: 12,
                       alignItems: "center",
                       marginBottom: 18,
-                      opacity: googleMutation.isPending ? 0.6 : 1,
+                      opacity: googleMutation.isPending || !isGoogleConfigured ? 0.6 : 1,
                     }}
                   >
                     <Text
@@ -458,7 +483,9 @@ export default function LoginScreen() {
                     >
                       {googleMutation.isPending
                         ? "Connecting Google..."
-                        : "Continue with Google"}
+                        : isGoogleConfigured
+                          ? "Continue with Google"
+                          : "Google not configured"}
                     </Text>
                   </TouchableOpacity>
                 </>
