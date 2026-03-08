@@ -28,6 +28,7 @@ import {
   Home,
   MessageCircle,
   ShieldAlert,
+  Briefcase,
   Volume2,
   Mic,
 } from "lucide-react-native";
@@ -647,6 +648,7 @@ export default function AdminOverviewScreen() {
     { key: "dashboard", title: "Dashboard", href: "/(app)/(admin)", icon: Home },
     { key: "users", title: "Users", href: "/(app)/(admin)/users", icon: Users },
     { key: "ai-finder", title: "AI Finder", href: "/(app)/(shared)/ai-finder", icon: Sparkles },
+    { key: "jobs", title: "Jobs", href: "/(app)/(shared)/jobs", icon: Briefcase },
     { key: "subscriptions", title: "Subscriptions", href: "/(app)/(admin)/subscriptions", icon: CreditCard },
     { key: "control-center", title: "Control Center", href: "/(app)/(admin)/control-center", icon: ShieldAlert },
     { key: "complaints", title: "Complaints", href: "/(app)/(admin)/complaints", icon: ShieldAlert },

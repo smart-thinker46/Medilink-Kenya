@@ -26,6 +26,7 @@ import {
   Sparkles,
   Mic,
   User,
+  Briefcase,
 } from "lucide-react-native";
 import { usePathname, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
@@ -209,6 +210,7 @@ export default function PatientHomeScreen() {
     { key: "book", title: "Book Appointment", href: "/(app)/(patient)/book-appointment", icon: Calendar },
     { key: "find-medics", title: "Find Medics", href: "/(app)/(patient)/search-medics", icon: Search },
     { key: "ai-finder", title: "AI Finder", href: "/(app)/(shared)/ai-finder", icon: Sparkles },
+    { key: "jobs", title: "Jobs", href: "/(app)/(shared)/jobs", icon: Briefcase },
     { key: "records", title: "Medical Records", href: "/(app)/(patient)/medical-history", icon: FileText },
     { key: "health-hub", title: "Health Hub", href: "/(app)/(patient)/health-hub", icon: Heart },
     { key: "voice-ai", title: "Voice Assistant", href: "/(app)/(patient)/ai-voice", icon: Mic },

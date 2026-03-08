@@ -155,7 +155,7 @@ export default function EntityProfileScreen() {
         return;
       }
       if (viewerRole === "MEDIC") {
-        router.push("/(app)/(medic)/shifts");
+        router.push("/(app)/(medic)/jobs");
         return;
       }
     }
@@ -174,7 +174,7 @@ export default function EntityProfileScreen() {
             : entityRole === "HOSPITAL_ADMIN" && viewerRole === "PATIENT"
               ? "Find Medics In Hospital"
               : entityRole === "HOSPITAL_ADMIN" && viewerRole === "MEDIC"
-                ? "View Hospital Shifts"
+                ? "View Hospital Jobs"
                 : "";
 
   const isLoading = entityQuery.isLoading || myLocationQuery.isLoading;

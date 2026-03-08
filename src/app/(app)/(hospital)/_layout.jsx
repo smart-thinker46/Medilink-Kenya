@@ -31,6 +31,7 @@ export default function HospitalTabLayout() {
   const primaryLinks = [
     { key: "home", title: "Home", href: "/(app)/(hospital)", icon: Home },
     { key: "shifts", title: "Shifts", href: "/(app)/(hospital)/shifts", icon: Briefcase },
+    { key: "jobs", title: "Jobs", href: "/(app)/(hospital)/jobs", icon: Briefcase },
     { key: "medics", title: "Medics", href: "/(app)/(hospital)/medics", icon: Users },
     { key: "appointments", title: "Appointments", href: "/(app)/(hospital)/appointments", icon: Calendar },
   ];
@@ -47,6 +48,7 @@ export default function HospitalTabLayout() {
     { key: "analytics", title: "Analytics", href: "/(app)/(hospital)/analytics", icon: PieChart },
     { key: "pharmacy", title: "Pharmacy", href: "/(app)/(hospital)/pharmacy", icon: Pill },
     { key: "shift-create", title: "Create Shift", href: "/(app)/(hospital)/shift-create", icon: Briefcase },
+    { key: "job-create", title: "Post Job", href: "/(app)/(hospital)/job-create", icon: Briefcase },
     { key: "edit-profile", title: "Edit Profile", href: "/(app)/(hospital)/edit-profile", icon: Settings },
   ];
 
@@ -101,6 +103,13 @@ export default function HospitalTabLayout() {
         }}
       />
       <Tabs.Screen
+        name="jobs"
+        options={{
+          title: "Jobs",
+          tabBarIcon: ({ color }) => <Briefcase color={color} size={22} />,
+        }}
+      />
+      <Tabs.Screen
         name="medics"
         options={{
           title: "Medics",
@@ -123,6 +132,7 @@ export default function HospitalTabLayout() {
       <Tabs.Screen name="pharmacy-marketplace" options={{ href: null }} />
       <Tabs.Screen name="inventory-products" options={{ href: null }} />
       <Tabs.Screen name="inventory-pos" options={{ href: null }} />
+      <Tabs.Screen name="job-create" options={{ href: null }} />
       <Tabs.Screen name="shift-create" options={{ href: null }} />
       <Tabs.Screen name="edit-profile" options={{ href: null }} />
     </Tabs>

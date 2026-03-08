@@ -478,20 +478,41 @@ class ApiClient {
     return this.client.get("/shifts", { params });
   }
 
+  // Jobs
+  async getJobs(params = {}) {
+    return this.client.get("/jobs", { params });
+  }
+
   async createShift(data) {
     return this.client.post("/shifts", data);
+  }
+
+  async createJob(data) {
+    return this.client.post("/jobs", data);
   }
 
   async applyToShift(shiftId) {
     return this.client.post(`/shifts/${shiftId}/apply`);
   }
 
+  async applyToJob(jobId) {
+    return this.client.post(`/jobs/${jobId}/apply`);
+  }
+
   async cancelShiftApplication(shiftId) {
     return this.client.post(`/shifts/${shiftId}/unapply`);
   }
 
+  async cancelJobApplication(jobId) {
+    return this.client.post(`/jobs/${jobId}/unapply`);
+  }
+
   async updateShift(shiftId, data) {
     return this.client.put(`/shifts/${shiftId}`, data);
+  }
+
+  async updateJob(jobId, data) {
+    return this.client.put(`/jobs/${jobId}`, data);
   }
 
   async cancelShift(shiftId, reason) {
@@ -500,8 +521,18 @@ class ApiClient {
     });
   }
 
+  async cancelJob(jobId, reason) {
+    return this.client.put(`/jobs/${jobId}/cancel`, {
+      reason: reason || undefined,
+    });
+  }
+
   async deleteShift(shiftId) {
     return this.client.delete(`/shifts/${shiftId}`);
+  }
+
+  async deleteJob(jobId) {
+    return this.client.delete(`/jobs/${jobId}`);
   }
 
   async getHospitalAnalytics() {

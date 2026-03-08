@@ -178,10 +178,18 @@ export default function MedicHomeScreen() {
     {
       id: "shifts",
       title: "Apply for Shifts",
-      description: "Hospital openings",
+      description: "Hospital shift opportunities",
       icon: Briefcase,
       color: theme.success,
       onPress: () => handleProtected(() => router.push("/(app)/(medic)/shifts")),
+    },
+    {
+      id: "jobs",
+      title: "Explore Jobs",
+      description: "Detailed job listings",
+      icon: Briefcase,
+      color: theme.info,
+      onPress: () => handleProtected(() => router.push("/(app)/(medic)/jobs")),
     },
     {
       id: "payments",
@@ -237,6 +245,7 @@ export default function MedicHomeScreen() {
     { key: "patients", title: "Patients", href: "/(app)/(medic)/patients", icon: Users },
     { key: "appointments", title: "Appointments", href: "/(app)/(medic)/appointments", icon: Calendar },
     { key: "shifts", title: "Shifts", href: "/(app)/(medic)/shifts", icon: Briefcase },
+    { key: "jobs", title: "Jobs", href: "/(app)/(medic)/jobs", icon: Briefcase },
     { key: "pharmacy", title: "Pharmacy", href: "/(app)/(medic)/pharmacy-marketplace", icon: ShoppingCart },
     { key: "ai-finder", title: "AI Finder", href: "/(app)/(shared)/ai-finder", icon: Sparkles },
     { key: "analytics", title: "Analytics", href: "/(app)/(medic)/analytics", icon: PieChart },

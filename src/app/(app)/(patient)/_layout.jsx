@@ -16,6 +16,7 @@ import {
   Bell,
   Sparkles,
   Mic,
+  Briefcase,
   LayoutDashboard,
 } from "lucide-react-native";
 import ResponsiveTabBar from "@/components/ResponsiveTabBar";
@@ -43,6 +44,7 @@ export default function PatientTabLayout() {
       ? [{ key: "back-admin", title: "Back to Admin", href: "/(app)/(admin)", icon: LayoutDashboard }]
       : []),
     { key: "ai-assistant", title: "AI Assistant", href: "/(app)/(patient)/ai-assistant", icon: Sparkles },
+    { key: "jobs", title: "Jobs", href: "/(app)/(shared)/jobs", icon: Briefcase },
     { key: "ai-voice", title: "Voice Assistant", href: "/(app)/(patient)/ai-voice", icon: Mic },
     { key: "pharmacy", title: "Pharmacy", href: "/(app)/(patient)/pharmacy", icon: ShoppingBag },
     { key: "book", title: "Book Appointment", href: "/(app)/(patient)/book-appointment", icon: PlusCircle },

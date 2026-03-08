@@ -31,6 +31,7 @@ export default function MedicTabLayout() {
     { key: "home", title: "Home", href: "/(app)/(medic)", icon: Home },
     { key: "patients", title: "Patients", href: "/(app)/(medic)/patients", icon: Users },
     { key: "shifts", title: "Shifts", href: "/(app)/(medic)/shifts", icon: Briefcase },
+    { key: "jobs", title: "Jobs", href: "/(app)/(medic)/jobs", icon: Briefcase },
     { key: "appointments", title: "Appointments", href: "/(app)/(medic)/appointments", icon: Calendar },
   ];
 
@@ -102,6 +103,13 @@ export default function MedicTabLayout() {
         name="shifts"
         options={{
           title: "Shifts",
+          tabBarIcon: ({ color }) => <Briefcase color={color} size={22} />,
+        }}
+      />
+      <Tabs.Screen
+        name="jobs"
+        options={{
+          title: "Jobs",
           tabBarIcon: ({ color }) => <Briefcase color={color} size={22} />,
         }}
       />

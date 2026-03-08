@@ -14,6 +14,7 @@ import {
   ShieldAlert,
   Mail,
   Sparkles,
+  Briefcase,
 } from "lucide-react-native";
 import ResponsiveTabBar from "@/components/ResponsiveTabBar";
 import { useNotifications } from "@/utils/useNotifications";
@@ -32,6 +33,7 @@ export default function AdminTabLayout() {
 
   const moreLinks = [
     { key: "chat", title: "Chat", href: "/(app)/(shared)/conversations", icon: MessageCircle },
+    { key: "jobs", title: "Jobs", href: "/(app)/(shared)/jobs", icon: Briefcase },
     { key: "email-center", title: "Email Center", href: "/(app)/(admin)/email-center", icon: Mail },
     { key: "video-call", title: "Video Call", href: "/(app)/(admin)/video-call", icon: Video },
     { key: "ai-features", title: "AI Features", href: "/(app)/(shared)/ai-finder", icon: Sparkles },
