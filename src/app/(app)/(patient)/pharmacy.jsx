@@ -52,6 +52,20 @@ export default function PharmacyScreen() {
     typeof prescriptionIdParam === "string" && prescriptionIdParam.trim().length > 0
       ? prescriptionIdParam.trim()
       : "";
+  const pharmacyIdParam = Array.isArray(params?.pharmacyId)
+    ? params.pharmacyId[0]
+    : params?.pharmacyId;
+  const scopedPharmacyId =
+    typeof pharmacyIdParam === "string" && pharmacyIdParam.trim().length > 0
+      ? pharmacyIdParam.trim()
+      : "";
+  const pharmacyNameParam = Array.isArray(params?.pharmacyName)
+    ? params.pharmacyName[0]
+    : params?.pharmacyName;
+  const scopedPharmacyName =
+    typeof pharmacyNameParam === "string" && pharmacyNameParam.trim().length > 0
+      ? pharmacyNameParam.trim()
+      : "";
 
   // Video call integration
   const {
@@ -90,7 +104,13 @@ export default function PharmacyScreen() {
   ];
 
   const marketplaceQuery = useQuery({
-    queryKey: ["pharmacy-marketplace", searchQuery, activeCategory, locationFilter],
+    queryKey: [
+      "pharmacy-marketplace",
+      searchQuery,
+      activeCategory,
+      locationFilter,
+      scopedPharmacyId,
+    ],
     queryFn: () =>
       apiClient.getPharmacyMarketplace({
         search: searchQuery || undefined,
@@ -144,11 +164,13 @@ export default function PharmacyScreen() {
       product.description.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory =
       activeCategory === "all" || product.category === activeCategory;
+    const matchesPharmacy =
+      !scopedPharmacyId || String(product.pharmacyId || "") === scopedPharmacyId;
     const pharmacyLocation = String(
       product.location || product.pharmacyLocation || product.pharmacy || "",
     ).toLowerCase();
     const matchesLocation = !locationFilter || pharmacyLocation.includes(locationFilter.toLowerCase());
-    return matchesSearch && matchesCategory && matchesLocation;
+    return matchesSearch && matchesCategory && matchesLocation && matchesPharmacy;
   });
 
   const trackMarketplaceEvent = (pharmacyId, type, payload = {}) => {
@@ -726,6 +748,39 @@ export default function PharmacyScreen() {
                 }}
               >
                 Prescription ID: {prescriptionId}
+              </Text>
+            </View>
+          ) : null}
+          {scopedPharmacyId ? (
+            <View
+              style={{
+                backgroundColor: `${theme.primary}15`,
+                borderColor: `${theme.primary}55`,
+                borderWidth: 1,
+                borderRadius: 12,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                marginBottom: 10,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontFamily: "Inter_600SemiBold",
+                  color: theme.primary,
+                  marginBottom: 2,
+                }}
+              >
+                Pharmacy Scope Active
+              </Text>
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontFamily: "Inter_400Regular",
+                  color: theme.textSecondary,
+                }}
+              >
+                Showing stock for: {scopedPharmacyName || "Selected Pharmacy"}
               </Text>
             </View>
           ) : null}

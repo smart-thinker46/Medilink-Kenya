@@ -1,9 +1,10 @@
 import { Platform, Image } from "react-native";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 
 const DEFAULT_LOGO = require("../assets/images/Medilink-logo.png");
+const BASE64_ENCODING = FileSystem?.EncodingType?.Base64 || "base64";
 
 const formatCurrency = (amount, currency = "KES") => {
   const numeric = Number(amount || 0);
@@ -157,7 +158,7 @@ const resolveLogoDataUri = async (logoSource) => {
   }
   try {
     const base64 = await FileSystem.readAsStringAsync(resolved.uri, {
-      encoding: FileSystem.EncodingType.Base64,
+      encoding: BASE64_ENCODING,
     });
     return `data:image/png;base64,${base64}`;
   } catch {

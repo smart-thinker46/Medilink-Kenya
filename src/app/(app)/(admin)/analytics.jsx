@@ -9,13 +9,14 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { MotiView } from "moti";
-import { Sparkles } from "lucide-react-native";
+import { Sparkles, Volume2 } from "lucide-react-native";
 import Svg, { Circle, G } from "react-native-svg";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
 import { useToast } from "@/components/ToastProvider";
 import apiClient from "@/utils/api";
+import useAiSpeechPlayer from "@/utils/useAiSpeechPlayer";
 
 const formatMoney = (value = 0, currency = "KES") => {
   const numeric = Number(value || 0);
@@ -199,6 +200,10 @@ export default function AdminAnalyticsScreen() {
   const { theme, isDark } = useAppTheme();
   const { showToast } = useToast();
   const [aiInsights, setAiInsights] = useState(null);
+  const { speak: speakAiText, isSpeaking: aiSpeaking } = useAiSpeechPlayer({
+    onWarn: (message) => showToast(message, "warning"),
+    onError: (message) => showToast(message, "error"),
+  });
 
   const overviewQuery = useQuery({
     queryKey: ["admin-overview"],
@@ -284,6 +289,25 @@ export default function AdminAnalyticsScreen() {
       cancelled: Number(fallback.cancelled || 0),
     };
   }, [analytics.shifts, operations]);
+
+  const getAnalyticsSpeechText = (data) => {
+    if (!data) return "";
+    if (String(data?.speechText || "").trim()) return String(data.speechText).trim();
+    return [
+      String(data?.summary || "").trim(),
+      Array.isArray(data?.insights) && data.insights.length
+        ? `Insights: ${data.insights.slice(0, 4).join(". ")}`
+        : "",
+      Array.isArray(data?.alerts) && data.alerts.length
+        ? `Alerts: ${data.alerts.slice(0, 4).join(". ")}`
+        : "",
+      Array.isArray(data?.recommendations) && data.recommendations.length
+        ? `Recommendations: ${data.recommendations.slice(0, 4).join(". ")}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(". ");
+  };
 
   return (
     <ScreenLayout>
@@ -559,6 +583,28 @@ export default function AdminAnalyticsScreen() {
           </TouchableOpacity>
           {!!aiInsights?.summary && (
             <View>
+              <TouchableOpacity
+                onPress={() => speakAiText(getAnalyticsSpeechText(aiInsights))}
+                disabled={aiSpeaking}
+                style={{
+                  alignSelf: "flex-start",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginBottom: 8,
+                  backgroundColor: theme.surface,
+                  opacity: aiSpeaking ? 0.7 : 1,
+                }}
+              >
+                <Volume2 color={theme.iconColor} size={14} />
+                <Text style={{ marginLeft: 6, fontSize: 11, color: theme.textSecondary }}>
+                  {aiSpeaking ? "Reading..." : "Read Summary"}
+                </Text>
+              </TouchableOpacity>
               <Text style={{ fontSize: 12, color: theme.textSecondary }}>{aiInsights.summary}</Text>
               {Array.isArray(aiInsights.insights) &&
                 aiInsights.insights.slice(0, 6).map((line, index) => (

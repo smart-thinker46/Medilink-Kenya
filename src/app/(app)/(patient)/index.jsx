@@ -26,6 +26,7 @@ import {
   Sparkles,
   Mic,
   User,
+  Briefcase,
 } from "lucide-react-native";
 import { usePathname, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
@@ -141,6 +142,14 @@ export default function PatientHomeScreen() {
       onPress: () => router.push("/(app)/(patient)/search-medics"),
     },
     {
+      id: "ai-finder",
+      title: "AI Finder",
+      description: "Find medicines, pharmacies, medics",
+      icon: Sparkles,
+      color: theme.info,
+      onPress: () => router.push("/(app)/(shared)/ai-finder"),
+    },
+    {
       id: "book-appointment",
       title: t("book_appointment"),
       description: t("book_appointment_desc"),
@@ -178,8 +187,8 @@ export default function PatientHomeScreen() {
     },
     {
       id: "voice-ai",
-      title: "Voice AI",
-      description: "Vapi voice assistant",
+      title: "Voice Assistant",
+      description: "Medilink AI voice tools",
       icon: Mic,
       color: theme.warning,
       onPress: () => router.push("/(app)/(patient)/ai-voice"),
@@ -200,9 +209,11 @@ export default function PatientHomeScreen() {
     { key: "appointments", title: "Appointments", href: "/(app)/(patient)/appointments", icon: Calendar },
     { key: "book", title: "Book Appointment", href: "/(app)/(patient)/book-appointment", icon: Calendar },
     { key: "find-medics", title: "Find Medics", href: "/(app)/(patient)/search-medics", icon: Search },
+    { key: "ai-finder", title: "AI Finder", href: "/(app)/(shared)/ai-finder", icon: Sparkles },
+    { key: "jobs", title: "Jobs", href: "/(app)/(shared)/jobs", icon: Briefcase },
     { key: "records", title: "Medical Records", href: "/(app)/(patient)/medical-history", icon: FileText },
     { key: "health-hub", title: "Health Hub", href: "/(app)/(patient)/health-hub", icon: Heart },
-    { key: "voice-ai", title: "Voice AI", href: "/(app)/(patient)/ai-voice", icon: Mic },
+    { key: "voice-ai", title: "Voice Assistant", href: "/(app)/(patient)/ai-voice", icon: Mic },
     { key: "emergency", title: "Emergency", href: "/(app)/(patient)/emergency", icon: Heart },
     { key: "chat", title: "Chat", href: "/(app)/(shared)/conversations", icon: MessageCircle },
     { key: "video", title: "Video Call", href: "/(app)/(patient)/video-call", icon: Video },

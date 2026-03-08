@@ -48,7 +48,9 @@ export default function AppLayout() {
 
       const superAdminAllowedGroups = new Set([
         "(admin)",
+        "(patient)",
         "(medic)",
+        "(hospital)",
         "(pharmacy)",
       ]);
       if (
@@ -80,6 +82,7 @@ export default function AppLayout() {
       <Stack.Screen name="(hospital)" />
       <Stack.Screen name="(pharmacy)" />
       <Stack.Screen name="(admin)" />
+      <Stack.Screen name="(shared)" />
     </Stack>
   );
 }

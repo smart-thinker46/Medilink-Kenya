@@ -77,6 +77,7 @@ export default function LeafletMap({
   polylines = [],
   mapType = "standard",
   onPress,
+  onMarkerPress,
   interactive = true,
 }) {
   const safeCenter = useMemo(() => {
@@ -187,6 +188,18 @@ export default function LeafletMap({
                     (marker.description ? "<br/>" + escapeHtml(marker.description) : "")
                   );
                 }
+                circle.on("click", function (event) {
+                  if (!window.ReactNativeWebView) return;
+                  L.DomEvent.stopPropagation(event);
+                  window.ReactNativeWebView.postMessage(
+                    JSON.stringify({
+                      type: "marker-press",
+                      markerId: marker.id,
+                      latitude: marker.latitude,
+                      longitude: marker.longitude,
+                    })
+                  );
+                });
                 if (marker.label) {
                   L.marker(latLng, {
                     interactive: false,
@@ -231,14 +244,22 @@ export default function LeafletMap({
         domStorageEnabled
         scrollEnabled={false}
         onMessage={(event) => {
-          if (typeof onPress !== "function") return;
           try {
             const payload = JSON.parse(event?.nativeEvent?.data || "{}");
-            if (payload?.type !== "map-press") return;
-            onPress({
-              latitude: toNumber(payload.latitude, NaN),
-              longitude: toNumber(payload.longitude, NaN),
-            });
+            if (payload?.type === "marker-press" && typeof onMarkerPress === "function") {
+              onMarkerPress({
+                markerId: String(payload.markerId || ""),
+                latitude: toNumber(payload.latitude, NaN),
+                longitude: toNumber(payload.longitude, NaN),
+              });
+              return;
+            }
+            if (payload?.type === "map-press" && typeof onPress === "function") {
+              onPress({
+                latitude: toNumber(payload.latitude, NaN),
+                longitude: toNumber(payload.longitude, NaN),
+              });
+            }
           } catch {
             // Ignore malformed message events.
           }

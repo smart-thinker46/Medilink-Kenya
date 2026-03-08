@@ -59,6 +59,7 @@ export default function AdminSubscriptionsScreen() {
     mutationFn: (payload) => apiClient.adminUpdateSubscriptionPricing(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-subscription-pricing"] });
+      queryClient.invalidateQueries({ queryKey: ["subscription-pricing"] });
     },
   });
 

@@ -7,14 +7,15 @@ import {
   ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { MotiView } from "moti";
-import { Mail, Search, Send, Sparkles, UserRound } from "lucide-react-native";
+import { Mail, Search, Send, Sparkles, UserRound, Volume2 } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
 import { useToast } from "@/components/ToastProvider";
 import apiClient from "@/utils/api";
+import useAiSpeechPlayer from "@/utils/useAiSpeechPlayer";
 
 const audienceOptions = [
   { label: "All Users", value: "ALL" },
@@ -33,6 +34,20 @@ const templateOptions = [
 
 const getAudienceLabel = (audience) =>
   audienceOptions.find((option) => option.value === audience)?.label || "Users";
+
+const ROLE_LABELS = {
+  SUPER_ADMIN: "Admin",
+  HOSPITAL_ADMIN: "Hospital Admin",
+  PHARMACY_ADMIN: "Pharmacy Admin",
+  PATIENT: "Patient",
+  MEDIC: "Medic",
+};
+
+const formatRoleLabel = (role) => {
+  const normalized = String(role || "").trim().toUpperCase();
+  if (!normalized) return "User";
+  return ROLE_LABELS[normalized] || normalized.replace(/_/g, " ");
+};
 
 const buildTemplate = ({ templateId, audience, selectedUser }) => {
   const recipientName =
@@ -77,6 +92,19 @@ export default function AdminEmailCenterScreen() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [isSending, setIsSending] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [aiBrief, setAiBrief] = useState("");
+  const [aiTone, setAiTone] = useState("professional");
+  const { speak: speakAiDraft, isSpeaking: aiSpeakingDraft } = useAiSpeechPlayer({
+    onWarn: (message) => showToast(message, "warning"),
+    onError: (message) => showToast(message, "error"),
+  });
+
+  const aiSettingsQuery = useQuery({
+    queryKey: ["ai-settings", "admin-email-center"],
+    queryFn: () => apiClient.aiGetSettings(),
+  });
+  const aiCanUse = Boolean(aiSettingsQuery.data?.canUse);
+  const aiBlockedReason = String(aiSettingsQuery.data?.blockedReason || "");
 
   const searchingUsers = audience === "USER" && recipientSearch.trim().length >= 2;
 
@@ -115,6 +143,34 @@ export default function AdminEmailCenterScreen() {
     setSelectedUser(null);
     setSelectedTemplate("");
   };
+
+  const aiComposeMutation = useMutation({
+    mutationFn: (payload) =>
+      apiClient.aiAdminEmailsAssistant({
+        mode: "compose",
+        brief: payload.brief,
+        tone: payload.tone,
+        audience: payload.audience,
+      }),
+    onSuccess: (data) => {
+      const nextSubject = String(data?.subject || "").trim();
+      const nextBody = String(data?.body || "").trim();
+      if (nextSubject) {
+        setSubject(nextSubject);
+      }
+      if (nextBody) {
+        setMessage(nextBody);
+      }
+      if (!nextSubject && !nextBody) {
+        showToast("AI did not return a draft. Please refine your brief.", "warning");
+        return;
+      }
+      showToast("AI email draft generated.", "success");
+    },
+    onError: (error) => {
+      showToast(error?.message || "AI draft generation failed.", "error");
+    },
+  });
 
   const applyTemplate = (templateId) => {
     const template = buildTemplate({
@@ -310,6 +366,101 @@ export default function AdminEmailCenterScreen() {
           </Text>
         </View>
 
+        <View
+          style={{
+            borderWidth: 1,
+            borderColor: theme.border,
+            borderRadius: 14,
+            backgroundColor: theme.card,
+            padding: 12,
+            marginBottom: 12,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+            <Sparkles color={theme.primary} size={16} />
+            <Text
+              style={{
+                marginLeft: 8,
+                color: theme.text,
+                fontSize: 13,
+                fontFamily: "Inter_600SemiBold",
+              }}
+            >
+              Medilink AI Draft
+            </Text>
+          </View>
+          <TextInput
+            placeholder="Describe the email you want AI to write..."
+            placeholderTextColor={theme.textSecondary}
+            value={aiBrief}
+            onChangeText={setAiBrief}
+            multiline
+            numberOfLines={3}
+            textAlignVertical="top"
+            style={{
+              minHeight: 84,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: theme.border,
+              backgroundColor: theme.surface,
+              paddingHorizontal: 12,
+              paddingTop: 10,
+              color: theme.text,
+              marginBottom: 8,
+            }}
+          />
+          <TextInput
+            placeholder="Tone (e.g. professional, friendly, urgent)"
+            placeholderTextColor={theme.textSecondary}
+            value={aiTone}
+            onChangeText={setAiTone}
+            style={{
+              height: 44,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: theme.border,
+              backgroundColor: theme.surface,
+              paddingHorizontal: 12,
+              color: theme.text,
+              marginBottom: 8,
+            }}
+          />
+          {!!aiBlockedReason && (
+            <Text style={{ color: theme.textSecondary, fontSize: 11, marginBottom: 8 }}>
+              {aiBlockedReason}
+            </Text>
+          )}
+          <TouchableOpacity
+            style={{
+              height: 42,
+              borderRadius: 10,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: theme.primary,
+              opacity:
+                !aiCanUse || !aiBrief.trim() || aiComposeMutation.isPending || aiComposeMutation.isLoading
+                  ? 0.65
+                  : 1,
+            }}
+            disabled={
+              !aiCanUse || !aiBrief.trim() || aiComposeMutation.isPending || aiComposeMutation.isLoading
+            }
+            onPress={() =>
+              aiComposeMutation.mutate({
+                brief: aiBrief.trim(),
+                tone: aiTone.trim() || "professional",
+                audience,
+              })
+            }
+          >
+            <Text style={{ color: "#fff", fontFamily: "Inter_600SemiBold", fontSize: 12 }}>
+              {aiComposeMutation.isPending || aiComposeMutation.isLoading
+                ? "Generating..."
+                : "Generate with AI"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {audience === "USER" && (
           <View
             style={{
@@ -427,7 +578,7 @@ export default function AdminEmailCenterScreen() {
                         fontSize: 11,
                       }}
                     >
-                      {user.email} • {user.role || "USER"}
+                      {user.email} • {formatRoleLabel(user.role)}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -473,6 +624,43 @@ export default function AdminEmailCenterScreen() {
             marginBottom: 14,
           }}
         />
+
+        <TouchableOpacity
+          style={{
+            height: 42,
+            borderRadius: 10,
+            alignItems: "center",
+            justifyContent: "center",
+            flexDirection: "row",
+            borderWidth: 1,
+            borderColor: theme.border,
+            backgroundColor: theme.surface,
+            marginBottom: 10,
+            opacity:
+              !aiCanUse || !message.trim() || aiSpeakingDraft
+                ? 0.65
+                : 1,
+          }}
+          disabled={!aiCanUse || !message.trim() || aiSpeakingDraft}
+          onPress={() => {
+            const speechText = [subject?.trim(), message?.trim()].filter(Boolean).join(". ");
+            speakAiDraft(speechText);
+          }}
+        >
+          <Volume2 color={theme.text} size={16} />
+          <Text
+            style={{
+              marginLeft: 8,
+              color: theme.text,
+              fontFamily: "Inter_600SemiBold",
+              fontSize: 12,
+            }}
+          >
+            {aiSpeakingDraft
+              ? "Reading..."
+              : "Read Draft Aloud (AI Speech)"}
+          </Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={{

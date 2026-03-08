@@ -76,6 +76,7 @@ export default function LeafletMap({
   polylines = [],
   mapType = "standard",
   onPress,
+  onMarkerPress,
   interactive = true,
 }) {
   const safeCenter = useMemo(() => normalizeCoordinate(center) || DEFAULT_CENTER, [center]);
@@ -88,18 +89,28 @@ export default function LeafletMap({
   const mapId = useMemo(() => `leaflet-${Math.random().toString(36).slice(2, 10)}`, []);
 
   useEffect(() => {
-    if (typeof window === "undefined" || typeof onPress !== "function") return undefined;
+    if (typeof window === "undefined") return undefined;
     const handler = (event) => {
       const payload = event?.data;
-      if (!payload || payload.type !== "leaflet-map-press" || payload.mapId !== mapId) return;
-      onPress({
-        latitude: toNumber(payload.latitude, NaN),
-        longitude: toNumber(payload.longitude, NaN),
-      });
+      if (!payload || payload.mapId !== mapId) return;
+      if (payload.type === "leaflet-marker-press" && typeof onMarkerPress === "function") {
+        onMarkerPress({
+          markerId: String(payload.markerId || ""),
+          latitude: toNumber(payload.latitude, NaN),
+          longitude: toNumber(payload.longitude, NaN),
+        });
+        return;
+      }
+      if (payload.type === "leaflet-map-press" && typeof onPress === "function") {
+        onPress({
+          latitude: toNumber(payload.latitude, NaN),
+          longitude: toNumber(payload.longitude, NaN),
+        });
+      }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [mapId, onPress]);
+  }, [mapId, onMarkerPress, onPress]);
 
   const html = useMemo(() => {
     const tileLayer = TILE_LAYERS[safeMapType] || TILE_LAYERS.standard;
@@ -184,6 +195,19 @@ export default function LeafletMap({
                       (marker.description ? "<br/>" + escapeHtml(marker.description) : "")
                   );
                 }
+                markerDot.on("click", function(event) {
+                  L.DomEvent.stopPropagation(event);
+                  window.parent.postMessage(
+                    {
+                      type: "leaflet-marker-press",
+                      mapId: mapId,
+                      markerId: marker.id,
+                      latitude: marker.latitude,
+                      longitude: marker.longitude,
+                    },
+                    "*"
+                  );
+                });
 
                 if (marker.label) {
                   L.marker(latLng, {

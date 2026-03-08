@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -19,6 +19,7 @@ import {
   PackageSearch,
   BarChart3,
   MessageCircle,
+  Volume2,
 } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
@@ -28,6 +29,7 @@ import { useAuthStore } from "@/utils/auth/store";
 import apiClient from "@/utils/api";
 import usePharmacyScope from "@/utils/usePharmacyScope";
 import PharmacyScopeSelector from "@/components/PharmacyScopeSelector";
+import useAiSpeechPlayer from "@/utils/useAiSpeechPlayer";
 
 const formatList = (items = []) =>
   (Array.isArray(items) ? items : [])
@@ -55,6 +57,17 @@ export default function PharmacyAiAssistantScreen() {
   const [searchResults, setSearchResults] = useState([]);
   const [assistantAnswer, setAssistantAnswer] = useState("");
   const [analyticsResult, setAnalyticsResult] = useState(null);
+  const [stockForecastResult, setStockForecastResult] = useState(null);
+  const { speak: speakAiText, stop: stopAiSpeech, isSpeaking: aiSpeaking } = useAiSpeechPlayer({
+    onWarn: (message) => showToast(message, "warning"),
+    onError: (message) => showToast(message, "error"),
+  });
+
+  useEffect(() => {
+    return () => {
+      stopAiSpeech().catch(() => undefined);
+    };
+  }, [stopAiSpeech]);
 
   const aiSettingsQuery = useQuery({
     queryKey: ["ai-settings", "pharmacy-ai-assistant"],
@@ -106,11 +119,21 @@ export default function PharmacyAiAssistantScreen() {
     onError: (error) => showToast(error?.message || "AI analytics unavailable.", "error"),
   });
 
+  const aiStockForecastMutation = useMutation({
+    mutationFn: () =>
+      apiClient.aiStockForecast({
+        pharmacyId,
+        windowDays: 30,
+      }),
+    onSuccess: (data) => setStockForecastResult(data || null),
+    onError: (error) => showToast(error?.message || "Stock forecast unavailable.", "error"),
+  });
+
   const aiState = aiSettingsQuery.data || {};
   const isPremium = Boolean(aiState?.isPremium);
   const aiEnabled = Boolean(aiState?.aiEnabled);
   const canUse = Boolean(aiState?.canUse);
-  const provider = String(aiState?.provider || "openai").toUpperCase();
+  const providerLabel = String(aiState?.displayProvider || "Medilink AI");
   const blockedReason = String(aiState?.blockedReason || "");
 
   const products = Array.isArray(productsQuery.data) ? productsQuery.data : [];
@@ -187,6 +210,40 @@ Low stock count: ${lowStockProducts.length}
 Pending orders: ${pendingOrders.length}
 Provide top 5 priority actions for the next 7 days.`;
 
+  const getAnalyticsSpeechText = (data) => {
+    if (!data) return "";
+    if (String(data?.speechText || "").trim()) return String(data.speechText).trim();
+    return [
+      String(data?.summary || "").trim(),
+      Array.isArray(data?.insights) && data.insights.length
+        ? `Insights: ${data.insights.slice(0, 4).join(". ")}`
+        : "",
+      Array.isArray(data?.alerts) && data.alerts.length
+        ? `Alerts: ${data.alerts.slice(0, 4).join(". ")}`
+        : "",
+      Array.isArray(data?.recommendations) && data.recommendations.length
+        ? `Recommendations: ${data.recommendations.slice(0, 4).join(". ")}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(". ");
+  };
+
+  const getStockForecastSpeechText = (data) => {
+    if (!data) return "";
+    if (String(data?.speechText || "").trim()) return String(data.speechText).trim();
+    const urgent = Array.isArray(data?.urgent) ? data.urgent : [];
+    return [
+      String(data?.summary || "").trim(),
+      Array.isArray(data?.recommendations) && data.recommendations.length
+        ? `Recommendations: ${data.recommendations.slice(0, 3).join(". ")}`
+        : "",
+      urgent.length ? `Urgent products: ${urgent.slice(0, 3).map((item) => item?.name).filter(Boolean).join(", ")}.` : "",
+    ]
+      .filter(Boolean)
+      .join(". ");
+  };
+
   return (
     <ScreenLayout>
       <ScrollView
@@ -219,7 +276,7 @@ Provide top 5 priority actions for the next 7 days.`;
               Pharmacy AI
             </Text>
             <Text style={{ marginTop: 2, fontSize: 12, color: theme.textSecondary }}>
-              Provider: {provider}
+              Powered by {providerLabel}
             </Text>
           </View>
         </View>
@@ -292,6 +349,102 @@ Provide top 5 priority actions for the next 7 days.`;
                 Disable AI
               </Text>
             </TouchableOpacity>
+          )}
+        </View>
+
+        <View
+          style={{
+            backgroundColor: theme.card,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: theme.border,
+            padding: 16,
+            marginBottom: 16,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
+            <PackageSearch color={theme.warning} size={16} />
+            <Text
+              style={{ marginLeft: 8, fontSize: 14, color: theme.text, fontFamily: "Inter_600SemiBold" }}
+            >
+              Stock Forecast Copilot
+            </Text>
+          </View>
+          <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 10 }}>
+            Forecast demand and reorder plan using last 30 days of stock movement.
+          </Text>
+
+          <TouchableOpacity
+            onPress={() => aiStockForecastMutation.mutate()}
+            disabled={!canUse || aiStockForecastMutation.isLoading || !pharmacyId}
+            style={{
+              backgroundColor: theme.warning,
+              borderRadius: 10,
+              paddingVertical: 10,
+              alignItems: "center",
+              opacity: !canUse || !pharmacyId ? 0.6 : 1,
+            }}
+          >
+            {aiStockForecastMutation.isLoading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={{ color: "#FFFFFF", fontSize: 13, fontFamily: "Inter_600SemiBold" }}>
+                Generate Stock Forecast
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          {!!stockForecastResult?.summary && (
+            <View
+              style={{
+                marginTop: 12,
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 10,
+                padding: 10,
+                backgroundColor: theme.surface,
+              }}
+            >
+              <TouchableOpacity
+                onPress={() => speakAiText(getStockForecastSpeechText(stockForecastResult))}
+                disabled={aiSpeaking}
+                style={{
+                  alignSelf: "flex-start",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginBottom: 8,
+                  backgroundColor: theme.card,
+                  opacity: aiSpeaking ? 0.7 : 1,
+                }}
+              >
+                <Volume2 color={theme.iconColor} size={14} />
+                <Text style={{ marginLeft: 6, fontSize: 11, color: theme.textSecondary }}>
+                  {aiSpeaking ? "Reading..." : "Read Forecast"}
+                </Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 13, color: theme.text, lineHeight: 18 }}>
+                {stockForecastResult.summary}
+              </Text>
+              {Array.isArray(stockForecastResult?.recommendations) &&
+              stockForecastResult.recommendations.length > 0 ? (
+                <Text style={{ marginTop: 6, fontSize: 12, color: theme.textSecondary, lineHeight: 18 }}>
+                  Recommendations: {stockForecastResult.recommendations.join(" • ")}
+                </Text>
+              ) : null}
+              {(Array.isArray(stockForecastResult?.urgent) ? stockForecastResult.urgent : [])
+                .slice(0, 5)
+                .map((item, index) => (
+                  <Text key={`${String(item?.productId || "product")}-${index}`} style={{ marginTop: 4, fontSize: 12, color: theme.warning }}>
+                    {index + 1}. {String(item?.name || "Product")} • stock {Number(item?.currentStock || 0)} • reorder{" "}
+                    {Number(item?.recommendedQty || 0)}
+                  </Text>
+                ))}
+            </View>
           )}
         </View>
 
@@ -548,6 +701,28 @@ Provide top 5 priority actions for the next 7 days.`;
                 backgroundColor: theme.surface,
               }}
             >
+              <TouchableOpacity
+                onPress={() => speakAiText(getAnalyticsSpeechText(analyticsResult))}
+                disabled={aiSpeaking}
+                style={{
+                  alignSelf: "flex-start",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginBottom: 8,
+                  backgroundColor: theme.card,
+                  opacity: aiSpeaking ? 0.7 : 1,
+                }}
+              >
+                <Volume2 color={theme.iconColor} size={14} />
+                <Text style={{ marginLeft: 6, fontSize: 11, color: theme.textSecondary }}>
+                  {aiSpeaking ? "Reading..." : "Read Summary"}
+                </Text>
+              </TouchableOpacity>
               <Text style={{ fontSize: 13, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
                 Summary
               </Text>

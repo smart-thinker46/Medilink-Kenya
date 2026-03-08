@@ -16,13 +16,18 @@ import {
   Bell,
   Sparkles,
   Mic,
+  Briefcase,
+  LayoutDashboard,
 } from "lucide-react-native";
 import ResponsiveTabBar from "@/components/ResponsiveTabBar";
 import { useNotifications } from "@/utils/useNotifications";
 import { useChatUnreadCount } from "@/utils/useChatUnreadCount";
+import { useAuthStore } from "@/utils/auth/store";
 
 export default function PatientTabLayout() {
   const { theme } = useAppTheme();
+  const { auth } = useAuthStore();
+  const isSuperAdmin = String(auth?.user?.role || "").toUpperCase() === "SUPER_ADMIN";
   const { unreadCount } = useNotifications();
   const { unreadCount: chatUnreadCount } = useChatUnreadCount();
   const overflowBadgeCount = unreadCount + chatUnreadCount;
@@ -35,8 +40,12 @@ export default function PatientTabLayout() {
   ];
 
   const moreLinks = [
+    ...(isSuperAdmin
+      ? [{ key: "back-admin", title: "Back to Admin", href: "/(app)/(admin)", icon: LayoutDashboard }]
+      : []),
     { key: "ai-assistant", title: "AI Assistant", href: "/(app)/(patient)/ai-assistant", icon: Sparkles },
-    { key: "ai-voice", title: "Voice AI", href: "/(app)/(patient)/ai-voice", icon: Mic },
+    { key: "jobs", title: "Jobs", href: "/(app)/(shared)/jobs", icon: Briefcase },
+    { key: "ai-voice", title: "Voice Assistant", href: "/(app)/(patient)/ai-voice", icon: Mic },
     { key: "pharmacy", title: "Pharmacy", href: "/(app)/(patient)/pharmacy", icon: ShoppingBag },
     { key: "book", title: "Book Appointment", href: "/(app)/(patient)/book-appointment", icon: PlusCircle },
     { key: "records", title: "Records", href: "/(app)/(patient)/medical-history", icon: FileText },

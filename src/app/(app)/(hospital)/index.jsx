@@ -5,16 +5,20 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  Dimensions,
   Image,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 import { MotiView } from "moti";
 import {
+  Home,
   Briefcase,
   Users,
   Calendar,
+  PieChart,
+  CreditCard,
+  Pill,
   ShieldCheck,
   ShieldAlert,
   Plus,
@@ -26,6 +30,8 @@ import {
   Settings,
   Crown,
   Package,
+  Sparkles,
+  LayoutDashboard,
 } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
@@ -41,19 +47,25 @@ import { resolveMediaUrl } from "@/utils/media";
 import { useAuthStore } from "@/utils/auth/store";
 import { getFirstName, getTimeGreeting } from "@/utils/greeting";
 
-const { width: screenWidth } = Dimensions.get("window");
-
 export default function HospitalHomeScreen() {
   const router = useRouter();
+  const pathname = usePathname();
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
   const { theme, isDark } = useAppTheme();
   const { t } = useI18n();
   const { profile } = useHospitalProfile();
   const { auth } = useAuthStore();
+  const isSuperAdmin = String(auth?.user?.role || "").toUpperCase() === "SUPER_ADMIN";
+  const isWide = screenWidth >= 1024;
   const { unreadCount } = useNotifications();
   const firstName = getFirstName(auth?.user, "Hospital Admin");
   const timeGreeting = getTimeGreeting();
 
+  const jobsQuery = useQuery({
+    queryKey: ["hospital-jobs"],
+    queryFn: () => apiClient.getJobs(),
+  });
   const shiftsQuery = useQuery({
     queryKey: ["hospital-shifts"],
     queryFn: () => apiClient.getShifts(),
@@ -71,6 +83,7 @@ export default function HospitalHomeScreen() {
     queryFn: () => apiClient.getHospitalAnalytics(),
   });
 
+  const jobs = jobsQuery.data || [];
   const shifts = shiftsQuery.data || [];
   const appointmentRequests = appointmentsQuery.data?.items || appointmentsQuery.data || [];
   const medics = medicsQuery.data?.items || medicsQuery.data || [];
@@ -109,10 +122,18 @@ export default function HospitalHomeScreen() {
     {
       id: "create-shift",
       title: "Create Shift",
-      description: "Post available shifts",
+      description: "Post shift opportunities",
       icon: Plus,
       color: theme.primary,
       onPress: () => handleProtectedAction(() => router.push("/(app)/(hospital)/shift-create")),
+    },
+    {
+      id: "post-job",
+      title: "Post Job",
+      description: "Publish hiring opportunities",
+      icon: Plus,
+      color: theme.primary,
+      onPress: () => handleProtectedAction(() => router.push("/(app)/(hospital)/job-create")),
     },
     {
       id: "review-medics",
@@ -138,18 +159,127 @@ export default function HospitalHomeScreen() {
       color: theme.warning,
       onPress: () => router.push("/(app)/(hospital)/payments"),
     },
+    {
+      id: "ai-finder",
+      title: "AI Finder",
+      description: "Find medicines, pharmacies, medics",
+      icon: Sparkles,
+      color: theme.info,
+      onPress: () => router.push("/(app)/(shared)/ai-finder"),
+    },
+  ];
+  const sidebarLinks = [
+    ...(isSuperAdmin
+      ? [{ key: "back-admin", title: "Back to Admin", href: "/(app)/(admin)", icon: LayoutDashboard }]
+      : []),
+    { key: "dashboard", title: "Dashboard", href: "/(app)/(hospital)", icon: Home },
+    { key: "shifts", title: "Shifts", href: "/(app)/(hospital)/shifts", icon: Briefcase },
+    { key: "jobs", title: "Jobs", href: "/(app)/(hospital)/jobs", icon: Briefcase },
+    { key: "medics", title: "Medics", href: "/(app)/(hospital)/medics", icon: Users },
+    { key: "appointments", title: "Appointments", href: "/(app)/(hospital)/appointments", icon: Calendar },
+    { key: "pharmacy", title: "Pharmacy", href: "/(app)/(hospital)/pharmacy", icon: Pill },
+    { key: "ai-finder", title: "AI Finder", href: "/(app)/(shared)/ai-finder", icon: Sparkles },
+    { key: "analytics", title: "Analytics", href: "/(app)/(hospital)/analytics", icon: PieChart },
+    { key: "payments", title: "Payments", href: "/(app)/(hospital)/payments", icon: CreditCard },
+    { key: "chat", title: "Chat", href: "/(app)/(shared)/conversations", icon: MessageCircle },
+    { key: "video", title: "Video Call", href: "/(app)/(hospital)/video-call", icon: Video },
+    { key: "notifications", title: "Notifications", href: "/(app)/(shared)/notifications", icon: Bell },
+    { key: "profile", title: "Profile", href: "/(app)/(hospital)/profile", icon: Building2 },
+    { key: "edit-profile", title: "Edit Profile", href: "/(app)/(hospital)/edit-profile", icon: Settings },
   ];
 
   return (
     <ScreenLayout>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{
-          paddingTop: insets.top + 20,
-          paddingBottom: insets.bottom + 20,
-        }}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={{ flex: 1, flexDirection: isWide ? "row" : "column" }}>
+        {isWide && (
+          <View
+            style={{
+              width: 240,
+              paddingTop: insets.top + 20,
+              paddingBottom: 24,
+              paddingHorizontal: 16,
+              borderRightWidth: 1,
+              borderRightColor: theme.border,
+              backgroundColor: theme.card,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 18,
+                fontFamily: "Nunito_700Bold",
+                color: theme.text,
+                marginBottom: 16,
+              }}
+            >
+              Hospital Menu
+            </Text>
+            {sidebarLinks.map((link) => {
+              const Icon = link.icon;
+              const active = pathname === link.href;
+              const showBadge = link.key === "notifications" && unreadCount > 0;
+              return (
+                <TouchableOpacity
+                  key={link.key}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    paddingVertical: 10,
+                    paddingHorizontal: 12,
+                    borderRadius: 12,
+                    marginBottom: 6,
+                    backgroundColor: active ? theme.surface : "transparent",
+                  }}
+                  onPress={() => router.push(link.href)}
+                  activeOpacity={0.8}
+                >
+                  <Icon color={active ? theme.primary : theme.iconColor} size={18} />
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontFamily: "Inter_600SemiBold",
+                      color: active ? theme.primary : theme.text,
+                      marginLeft: 12,
+                      flex: 1,
+                    }}
+                  >
+                    {link.title}
+                  </Text>
+                  {showBadge && (
+                    <View
+                      style={{
+                        minWidth: 20,
+                        height: 20,
+                        borderRadius: 10,
+                        backgroundColor: theme.error,
+                        paddingHorizontal: 6,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 10,
+                          fontFamily: "Inter_700Bold",
+                          color: "#FFFFFF",
+                        }}
+                      >
+                        {unreadCount > 99 ? "99+" : unreadCount}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingTop: insets.top + 20,
+            paddingBottom: insets.bottom + 20,
+          }}
+          showsVerticalScrollIndicator={false}
+        >
         {/* Header */}
         <View
           style={{
@@ -396,7 +526,7 @@ export default function HospitalHomeScreen() {
                 color: theme.textSecondary,
               }}
             >
-              Open shifts: {shifts.length}
+              Open shifts: {shifts.length} • Open jobs: {jobs.length}
             </Text>
             <Text
               style={{
@@ -914,7 +1044,8 @@ export default function HospitalHomeScreen() {
             </Text>
           </TouchableOpacity>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </View>
     </ScreenLayout>
   );
 }

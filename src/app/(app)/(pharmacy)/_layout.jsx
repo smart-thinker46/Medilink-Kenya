@@ -5,6 +5,7 @@ import {
   ShoppingCart,
   Package,
   ClipboardList,
+  Briefcase,
   PieChart,
   User,
   MessageCircle,
@@ -28,6 +29,7 @@ export default function PharmacyTabLayout() {
   const primaryLinks = [
     { key: "home", title: "Home", href: "/(app)/(pharmacy)", icon: Home },
     { key: "pos", title: "POS", href: "/(app)/(pharmacy)/pos", icon: ShoppingCart },
+    { key: "jobs", title: "Jobs", href: "/(app)/(pharmacy)/jobs", icon: Briefcase },
     { key: "products", title: "Products", href: "/(app)/(pharmacy)/products", icon: Package },
     { key: "orders", title: "Orders", href: "/(app)/(pharmacy)/orders", icon: ClipboardList },
   ];
@@ -108,6 +110,10 @@ export default function PharmacyTabLayout() {
           tabBarIcon: ({ color }) => <ClipboardList color={color} size={22} />,
         }}
       />
+      <Tabs.Screen name="jobs" options={{ href: null }} />
+      <Tabs.Screen name="job-create" options={{ href: null }} />
+      <Tabs.Screen name="shifts" options={{ href: null }} />
+      <Tabs.Screen name="shift-create" options={{ href: null }} />
       <Tabs.Screen name="ai-assistant" options={{ href: null }} />
       <Tabs.Screen name="analytics" options={{ href: null }} />
       <Tabs.Screen name="profile" options={{ href: null }} />

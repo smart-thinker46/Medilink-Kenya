@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -11,6 +11,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { ArrowLeft, Mic, PhoneCall, ShieldAlert, Sparkles } from "lucide-react-native";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import * as DocumentPicker from "expo-document-picker";
+import { Audio } from "expo-av";
+import * as FileSystem from "expo-file-system/legacy";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -24,6 +27,7 @@ const MODES = [
   { id: "support", title: "Support" },
   { id: "emergency", title: "Emergency" },
 ];
+const BASE64_ENCODING = FileSystem?.EncodingType?.Base64 || "base64";
 
 export default function PatientAiVoiceScreen() {
   const router = useRouter();
@@ -35,6 +39,10 @@ export default function PatientAiVoiceScreen() {
   const [toolName, setToolName] = useState("search_medics");
   const [toolResult, setToolResult] = useState(null);
   const [sessionInfo, setSessionInfo] = useState(null);
+  const [voiceText, setVoiceText] = useState("");
+  const [transcript, setTranscript] = useState("");
+  const soundRef = useRef(null);
+  const tempAudioPathRef = useRef("");
 
   const settingsQuery = useQuery({
     queryKey: ["ai-settings", "voice"],
@@ -46,13 +54,42 @@ export default function PatientAiVoiceScreen() {
     queryFn: () => apiClient.aiVoiceHistory({ limit: 8 }),
   });
 
+  const localVoiceStatusQuery = useQuery({
+    queryKey: ["ai-voice-local-status"],
+    queryFn: () => apiClient.aiVoiceLocalStatus(),
+  });
+
+  useEffect(() => {
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(() => undefined);
+      }
+      const tempPath = String(tempAudioPathRef.current || "");
+      if (tempPath) {
+        FileSystem.deleteAsync(tempPath, { idempotent: true }).catch(() => undefined);
+      }
+    };
+  }, []);
+
+  const cleanupPlayback = async () => {
+    if (soundRef.current) {
+      await soundRef.current.unloadAsync().catch(() => undefined);
+      soundRef.current = null;
+    }
+    const tempPath = String(tempAudioPathRef.current || "");
+    if (tempPath) {
+      tempAudioPathRef.current = "";
+      await FileSystem.deleteAsync(tempPath, { idempotent: true }).catch(() => undefined);
+    }
+  };
+
   const createSessionMutation = useMutation({
     mutationFn: () => apiClient.aiVoiceCreateSession({ mode, platform: "mobile", locale: "en-KE" }),
     onSuccess: (data) => {
       setSessionInfo(data || null);
       showToast(
         data?.vapi?.configured
-          ? "Voice session started. Vapi configured."
+          ? "Voice session started. Live voice integration is configured."
           : "Voice session started (guided mode).",
         "success",
       );
@@ -89,16 +126,88 @@ export default function PatientAiVoiceScreen() {
     },
   });
 
+  const ttsMutation = useMutation({
+    mutationFn: (text) => apiClient.aiVoiceTts({ text }),
+    onSuccess: async (data) => {
+      await cleanupPlayback();
+      const base64Audio = String(data?.audioBase64 || "").trim();
+      const relativeUrl = String(data?.url || "").trim();
+      const absoluteUrl = apiClient.resolveAssetUrl(relativeUrl);
+      let playbackUri = "";
+      if (base64Audio) {
+        const tempFile = `${FileSystem.cacheDirectory || ""}medilink-ai-voice-${Date.now()}.wav`;
+        await FileSystem.writeAsStringAsync(tempFile, base64Audio, {
+          encoding: BASE64_ENCODING,
+        });
+        tempAudioPathRef.current = tempFile;
+        playbackUri = tempFile;
+      } else if (absoluteUrl) {
+        playbackUri = absoluteUrl;
+      }
+      if (!playbackUri) {
+        showToast("TTS succeeded but no playable audio was returned.", "error");
+        return;
+      }
+      try {
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: playbackUri },
+          { shouldPlay: true, progressUpdateIntervalMillis: 500 },
+        );
+        soundRef.current = sound;
+        showToast("Voice generated and playing in app.", "success");
+      } catch {
+        showToast("Voice generated but could not auto-play on this device.", "warning");
+      }
+    },
+    onError: (error) => {
+      showToast(error?.message || "Text-to-speech failed.", "error");
+    },
+  });
+
+  const sttMutation = useMutation({
+    mutationFn: async () => {
+      const file = await DocumentPicker.getDocumentAsync({
+        type: ["audio/*"],
+        copyToCacheDirectory: true,
+      });
+      if (file.canceled || !file.assets?.length) {
+        throw new Error("Audio selection cancelled.");
+      }
+      const picked = file.assets[0];
+      return apiClient.aiVoiceStt({
+        uri: picked.uri,
+        name: picked.name || "voice.wav",
+        type: picked.mimeType || "audio/wav",
+      });
+    },
+    onSuccess: (data) => {
+      const text = String(data?.text || "").trim();
+      setTranscript(text);
+      if (text) {
+        setVoiceText(text);
+        showToast("Speech transcribed successfully.", "success");
+      } else {
+        showToast("STT finished but returned empty text.", "warning");
+      }
+    },
+    onError: (error) => {
+      const message = String(error?.message || "");
+      if (/cancelled/i.test(message)) return;
+      showToast(message || "Speech-to-text failed.", "error");
+    },
+  });
+
   const aiState = settingsQuery.data || {};
   const canUse = Boolean(aiState?.canUse);
   const blockedReason = String(aiState?.blockedReason || "");
   const history = Array.isArray(historyQuery.data) ? historyQuery.data : [];
+  const localVoiceStatus = localVoiceStatusQuery.data || {};
 
   const tools = useMemo(() => {
-    if (mode === "search") return ["search_medics", "search_hospitals", "search_pharmacy_products"];
-    if (mode === "records") return ["summarize_health_record", "search_pharmacy_products"];
-    if (mode === "support") return ["request_support_chat"];
-    if (mode === "emergency") return ["get_emergency_contacts", "search_medics", "search_hospitals"];
+    if (mode === "search") return ["search_medics", "search_hospitals", "search_pharmacy_products", "guide_app_usage"];
+    if (mode === "records") return ["summarize_health_record", "search_pharmacy_products", "guide_app_usage"];
+    if (mode === "support") return ["request_support_chat", "guide_app_usage"];
+    if (mode === "emergency") return ["get_emergency_contacts", "search_medics", "search_hospitals", "guide_app_usage"];
     return [
       "search_medics",
       "search_hospitals",
@@ -106,6 +215,7 @@ export default function PatientAiVoiceScreen() {
       "summarize_health_record",
       "get_emergency_contacts",
       "request_support_chat",
+      "guide_app_usage",
     ];
   }, [mode]);
 
@@ -137,10 +247,10 @@ export default function PatientAiVoiceScreen() {
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 22, fontFamily: "Nunito_700Bold", color: theme.text }}>
-              Voice AI
+              Medilink Voice Assistant
             </Text>
             <Text style={{ marginTop: 2, fontSize: 12, color: theme.textSecondary }}>
-              Powered by Vapi + MediLink tools
+              Voice tools for search, records, emergency, and app guidance
             </Text>
           </View>
         </View>
@@ -164,6 +274,121 @@ export default function PatientAiVoiceScreen() {
           <Text style={{ marginTop: 8, fontSize: 12, color: canUse ? theme.success : theme.warning }}>
             {canUse ? "Voice AI is enabled." : blockedReason || "Voice AI is unavailable."}
           </Text>
+        </View>
+
+        <View
+          style={{
+            backgroundColor: theme.card,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: theme.border,
+            padding: 14,
+            marginBottom: 14,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+            <Mic color={theme.primary} size={16} />
+            <Text style={{ marginLeft: 8, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+              Local Voice Engines (Piper + whisper.cpp)
+            </Text>
+          </View>
+          {localVoiceStatusQuery.isLoading ? (
+            <ActivityIndicator color={theme.primary} size="small" />
+          ) : (
+            <>
+              <Text style={{ fontSize: 12, color: localVoiceStatus?.ready ? theme.success : theme.warning }}>
+                {localVoiceStatus?.ready
+                  ? "Local voice engines are ready."
+                  : "Local voice engines are not fully configured."}
+              </Text>
+              <Text style={{ marginTop: 5, fontSize: 11, color: theme.textSecondary }}>
+                TTS: {localVoiceStatus?.tts?.binaryAvailable ? "binary ok" : "binary missing"} • model:{" "}
+                {localVoiceStatus?.tts?.model || "not set"}
+              </Text>
+              <Text style={{ marginTop: 2, fontSize: 11, color: theme.textSecondary }}>
+                STT: {localVoiceStatus?.stt?.binaryAvailable ? "binary ok" : "binary missing"} • model:{" "}
+                {localVoiceStatus?.stt?.model || "not set"}
+              </Text>
+            </>
+          )}
+
+          <TextInput
+            value={voiceText}
+            onChangeText={setVoiceText}
+            placeholder="Text to convert to voice"
+            placeholderTextColor={theme.textSecondary}
+            style={{
+              marginTop: 10,
+              borderWidth: 1,
+              borderColor: theme.border,
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+              color: theme.text,
+              fontSize: 13,
+            }}
+          />
+
+          <View style={{ flexDirection: "row", marginTop: 10, gap: 8 }}>
+            <TouchableOpacity
+              disabled={!canUse || !voiceText.trim() || ttsMutation.isLoading}
+              onPress={() => ttsMutation.mutate(voiceText.trim())}
+              style={{
+                flex: 1,
+                backgroundColor: theme.primary,
+                borderRadius: 12,
+                paddingVertical: 11,
+                alignItems: "center",
+                opacity: !canUse || !voiceText.trim() ? 0.6 : 1,
+              }}
+            >
+              {ttsMutation.isLoading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={{ color: "#FFFFFF", fontFamily: "Inter_600SemiBold", fontSize: 12 }}>
+                  Generate Voice
+                </Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              disabled={!canUse || sttMutation.isLoading}
+              onPress={() => sttMutation.mutate()}
+              style={{
+                flex: 1,
+                backgroundColor: theme.success,
+                borderRadius: 12,
+                paddingVertical: 11,
+                alignItems: "center",
+                opacity: !canUse ? 0.6 : 1,
+              }}
+            >
+              {sttMutation.isLoading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={{ color: "#FFFFFF", fontFamily: "Inter_600SemiBold", fontSize: 12 }}>
+                  Transcribe Audio File
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {!!transcript && (
+            <View
+              style={{
+                marginTop: 10,
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 10,
+                backgroundColor: theme.surface,
+                padding: 10,
+              }}
+            >
+              <Text style={{ fontSize: 11, color: theme.textSecondary, marginBottom: 4 }}>
+                Last transcript
+              </Text>
+              <Text style={{ fontSize: 12, color: theme.text }}>{transcript}</Text>
+            </View>
+          )}
         </View>
 
         <View
@@ -244,7 +469,7 @@ export default function PatientAiVoiceScreen() {
                 Session: {sessionInfo.sessionId}
               </Text>
               <Text style={{ marginTop: 3, fontSize: 12, color: theme.textSecondary }}>
-                Vapi configured: {sessionInfo?.vapi?.configured ? "Yes" : "No"}
+                Live voice integration: {sessionInfo?.vapi?.configured ? "Configured" : "Not configured"}
               </Text>
               {!!sessionInfo?.warning && (
                 <Text style={{ marginTop: 4, fontSize: 12, color: theme.warning }}>

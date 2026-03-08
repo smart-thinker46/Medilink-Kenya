@@ -49,27 +49,34 @@ export default function LocationScreen() {
     ? null
     : require("expo-location");
 
-  const fetchLocation = async () => {
-    setLoading(true);
-    try {
-      const response = targetId
-        ? await apiClient.getUserLocation(targetId)
-        : await apiClient.getMyLocation();
-      const normalized = normalizeLocation(response?.location);
-      setLocation(normalized);
-      if (!targetId && normalized?.address) {
-        setLocationQuery(String(normalized.address));
-      }
-    } catch (error) {
-      showToast(error.message || "Failed to load location.", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchLocation();
-  }, [targetId]);
+    let cancelled = false;
+    const run = async () => {
+      setLoading(true);
+      try {
+        const response = targetId
+          ? await apiClient.getUserLocation(targetId)
+          : await apiClient.getMyLocation();
+        if (cancelled) return;
+        const normalized = normalizeLocation(response?.location);
+        setLocation(normalized);
+        if (!targetId && normalized?.address) {
+          setLocationQuery(String(normalized.address));
+        }
+      } catch (error) {
+        if (cancelled) return;
+        showToast(error.message || "Failed to load location.", "error");
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [targetId, showToast]);
 
   useEffect(() => {
     if (isReadOnly) return;

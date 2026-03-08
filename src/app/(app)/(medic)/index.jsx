@@ -27,6 +27,7 @@ import {
   Video,
   Settings,
   ShoppingCart,
+  Sparkles,
 } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
@@ -40,6 +41,9 @@ import { useAuthStore } from "@/utils/auth/store";
 import { getFirstName, getTimeGreeting } from "@/utils/greeting";
 import useMedicScope from "@/utils/useMedicScope";
 import MedicScopeSelector from "@/components/MedicScopeSelector";
+
+const AI_LOCKED_MESSAGE =
+  "AI is a premium feature and require to be unlocked for you to use it.";
 
 export default function MedicHomeScreen() {
   const router = useRouter();
@@ -112,6 +116,29 @@ export default function MedicHomeScreen() {
       Alert.alert("Withdrawal failed", error?.message || "Unable to request withdrawal.");
     },
   });
+  const aiSettingsQuery = useQuery({
+    queryKey: ["ai-settings", "medic-home"],
+    queryFn: () => apiClient.aiGetSettings(),
+    enabled: Boolean(auth?.token || auth?.jwt || auth?.accessToken),
+  });
+  const aiCanUse = aiSettingsQuery.isSuccess ? Boolean(aiSettingsQuery.data?.canUse) : true;
+  const aiIsPremium = aiSettingsQuery.isSuccess ? Boolean(aiSettingsQuery.data?.isPremium) : true;
+  const aiBlockedMessage = String(aiSettingsQuery.data?.blockedReason || AI_LOCKED_MESSAGE);
+
+  const openAiFinder = () => {
+    if (!aiCanUse) {
+      if (!aiIsPremium) {
+        router.push({
+          pathname: "/(app)/(shared)/subscription-checkout",
+          params: { role: "MEDIC" },
+        });
+        return;
+      }
+      Alert.alert("AI Locked", aiBlockedMessage);
+      return;
+    }
+    router.push("/(app)/(shared)/ai-finder");
+  };
 
   const handleProtected = (action) => {
     if (!isProfileComplete) {
@@ -151,10 +178,18 @@ export default function MedicHomeScreen() {
     {
       id: "shifts",
       title: "Apply for Shifts",
-      description: "Hospital openings",
+      description: "Hospital shift opportunities",
       icon: Briefcase,
       color: theme.success,
       onPress: () => handleProtected(() => router.push("/(app)/(medic)/shifts")),
+    },
+    {
+      id: "jobs",
+      title: "Explore Jobs",
+      description: "Detailed job listings",
+      icon: Briefcase,
+      color: theme.info,
+      onPress: () => handleProtected(() => router.push("/(app)/(medic)/jobs")),
     },
     {
       id: "payments",
@@ -171,6 +206,14 @@ export default function MedicHomeScreen() {
       icon: ShoppingCart,
       color: theme.primary,
       onPress: () => router.push("/(app)/(medic)/pharmacy-marketplace"),
+    },
+    {
+      id: "ai-finder",
+      title: "AI Finder",
+      description: "Find medicines, pharmacies, medics",
+      icon: Sparkles,
+      color: theme.info,
+      onPress: openAiFinder,
     },
     {
       id: "analytics",
@@ -202,7 +245,9 @@ export default function MedicHomeScreen() {
     { key: "patients", title: "Patients", href: "/(app)/(medic)/patients", icon: Users },
     { key: "appointments", title: "Appointments", href: "/(app)/(medic)/appointments", icon: Calendar },
     { key: "shifts", title: "Shifts", href: "/(app)/(medic)/shifts", icon: Briefcase },
+    { key: "jobs", title: "Jobs", href: "/(app)/(medic)/jobs", icon: Briefcase },
     { key: "pharmacy", title: "Pharmacy", href: "/(app)/(medic)/pharmacy-marketplace", icon: ShoppingCart },
+    { key: "ai-finder", title: "AI Finder", href: "/(app)/(shared)/ai-finder", icon: Sparkles },
     { key: "analytics", title: "Analytics", href: "/(app)/(medic)/analytics", icon: PieChart },
     { key: "payments", title: "Payments", href: "/(app)/(medic)/payments", icon: CreditCard },
     { key: "chat", title: "Chat", href: "/(app)/(shared)/conversations", icon: MessageCircle },
@@ -256,7 +301,7 @@ export default function MedicHomeScreen() {
                     marginBottom: 6,
                     backgroundColor: active ? theme.surface : "transparent",
                   }}
-                  onPress={() => router.push(link.href)}
+                  onPress={() => (link.key === "ai-finder" ? openAiFinder() : router.push(link.href))}
                   activeOpacity={0.8}
                 >
                   <Icon color={active ? theme.primary : theme.iconColor} size={18} />
@@ -400,6 +445,31 @@ export default function MedicHomeScreen() {
             subscriptionActive={Boolean(profile?.subscriptionActive)}
             theme={theme}
           />
+
+          {!aiCanUse && (
+            <View style={{ paddingHorizontal: 24, marginBottom: 16 }}>
+              <View
+                style={{
+                  backgroundColor: theme.card,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontFamily: "Inter_500Medium",
+                    color: theme.textSecondary,
+                  }}
+                >
+                  {AI_LOCKED_MESSAGE}
+                </Text>
+              </View>
+            </View>
+          )}
 
           <View style={{ paddingHorizontal: 24 }}>
             <MedicScopeSelector
