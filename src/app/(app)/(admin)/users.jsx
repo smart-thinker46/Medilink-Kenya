@@ -273,6 +273,13 @@ export default function AdminUsersScreen() {
     },
   });
 
+  const aiAccessMutation = useMutation({
+    mutationFn: ({ userId, allowed }) => apiClient.adminSetUserAiAccess(userId, allowed),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+  });
+
   const bulkVerifyMutation = useMutation({
     mutationFn: ({ userIds, verified }) =>
       apiClient.verifyAdminUsersBulk(userIds, verified),
@@ -575,6 +582,15 @@ export default function AdminUsersScreen() {
       showToast(blocked ? "User blocked." : "User unblocked.", "success");
     } catch (error) {
       showToast(error.message || "Action failed.", "error");
+    }
+  };
+
+  const handleAiAccess = async (user, allowed) => {
+    try {
+      await aiAccessMutation.mutateAsync({ userId: user.id, allowed });
+      showToast(allowed ? "AI access granted for user." : "AI access override removed.", "success");
+    } catch (error) {
+      showToast(error.message || "Failed to update AI access.", "error");
     }
   };
 
@@ -2008,6 +2024,21 @@ export default function AdminUsersScreen() {
                     />
                   </TouchableOpacity>
                   <TouchableOpacity
+                    onPress={() => handleAiAccess(user, !Boolean(user.aiAccessGrantedByAdmin))}
+                    disabled={aiAccessMutation.isPending}
+                  >
+                    <Sparkles
+                      color={
+                        user.aiAccessGrantedByAdmin
+                          ? theme.primary
+                          : user.aiAccessAllowed
+                            ? theme.success
+                            : theme.iconColor
+                      }
+                      size={16}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
                     onPress={() => handleBlock(user.id, user.status !== "suspended")}
                   >
                     <Ban color={user.status === "suspended" ? theme.warning : theme.error} size={16} />
@@ -2065,6 +2096,47 @@ export default function AdminUsersScreen() {
                   <Text style={{ fontSize: 11, color: theme.textSecondary }}>
                     Registered: {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : "--"}
                   </Text>
+                  <Text style={{ fontSize: 11, color: theme.textSecondary }}>
+                    AI Access:{" "}
+                    {user.aiAccessAllowed
+                      ? user.aiAccessGrantedByAdmin
+                        ? "Enabled (Admin override)"
+                        : "Enabled (Premium)"
+                      : "Locked"}
+                  </Text>
+
+                  <View style={{ marginTop: 8, flexDirection: "row", gap: 8 }}>
+                    <TouchableOpacity
+                      style={{
+                        alignSelf: "flex-start",
+                        backgroundColor: user.aiAccessGrantedByAdmin
+                          ? `${theme.error}15`
+                          : `${theme.primary}15`,
+                        borderRadius: 10,
+                        paddingVertical: 6,
+                        paddingHorizontal: 10,
+                        borderWidth: 1,
+                        borderColor: user.aiAccessGrantedByAdmin
+                          ? `${theme.error}35`
+                          : `${theme.primary}35`,
+                        opacity: aiAccessMutation.isPending ? 0.7 : 1,
+                      }}
+                      onPress={() =>
+                        handleAiAccess(user, !Boolean(user.aiAccessGrantedByAdmin))
+                      }
+                      disabled={aiAccessMutation.isPending}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          color: user.aiAccessGrantedByAdmin ? theme.error : theme.primary,
+                          fontFamily: "Inter_600SemiBold",
+                        }}
+                      >
+                        {user.aiAccessGrantedByAdmin ? "Remove AI Override" : "Grant AI Access"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
 
                   <View style={{ marginTop: 10 }}>
                     <Text style={{ fontSize: 11, color: theme.textSecondary, marginBottom: 6 }}>

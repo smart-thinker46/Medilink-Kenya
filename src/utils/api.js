@@ -751,6 +751,10 @@ class ApiClient {
     return this.client.put(`/admin/users/${userId}/block`, { blocked });
   }
 
+  async adminSetUserAiAccess(userId, allowed = true) {
+    return this.client.put(`/admin/users/${userId}/ai-access`, { allowed });
+  }
+
   async adminSendNotification(payload) {
     return this.client.put("/admin/notifications", payload);
   }
