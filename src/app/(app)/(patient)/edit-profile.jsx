@@ -32,6 +32,56 @@ import { usePatientProfile } from "@/utils/usePatientProfile";
 import { getProfileCompletion } from "@/utils/profileCompletion";
 import { uploadFileIfNeeded } from "@/utils/upload";
 
+const KENYA_COUNTIES = [
+  "Baringo",
+  "Bomet",
+  "Bungoma",
+  "Busia",
+  "Elgeyo Marakwet",
+  "Embu",
+  "Garissa",
+  "Homa Bay",
+  "Isiolo",
+  "Kajiado",
+  "Kakamega",
+  "Kericho",
+  "Kiambu",
+  "Kilifi",
+  "Kirinyaga",
+  "Kisii",
+  "Kisumu",
+  "Kitui",
+  "Kwale",
+  "Laikipia",
+  "Lamu",
+  "Machakos",
+  "Makueni",
+  "Mandera",
+  "Marsabit",
+  "Meru",
+  "Migori",
+  "Mombasa",
+  "Murang'a",
+  "Nairobi",
+  "Nakuru",
+  "Nandi",
+  "Narok",
+  "Nyamira",
+  "Nyandarua",
+  "Nyeri",
+  "Samburu",
+  "Siaya",
+  "Taita Taveta",
+  "Tana River",
+  "Tharaka Nithi",
+  "Trans Nzoia",
+  "Turkana",
+  "Uasin Gishu",
+  "Vihiga",
+  "Wajir",
+  "West Pokot",
+];
+
 export default function EditProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -44,6 +94,7 @@ export default function EditProfileScreen() {
     firstName: "",
     lastName: "",
     phone: "",
+    nationalId: "",
     dateOfBirth: "",
     gender: "",
     homeCountry: "",
@@ -67,6 +118,15 @@ export default function EditProfileScreen() {
   const [idBack, setIdBack] = useState(null);
   const [idFrontName, setIdFrontName] = useState("");
   const [idBackName, setIdBackName] = useState("");
+  const [countyFocused, setCountyFocused] = useState(false);
+  const countySuggestions = useMemo(() => {
+    const query = String(formData.homeCountry || "").trim().toLowerCase();
+    if (!countyFocused && !query) return [];
+    if (!query) return KENYA_COUNTIES.slice(0, 10);
+    return KENYA_COUNTIES.filter((county) =>
+      county.toLowerCase().includes(query),
+    ).slice(0, 10);
+  }, [formData.homeCountry, countyFocused]);
 
   useEffect(() => {
     if (profile) {
@@ -75,6 +135,7 @@ export default function EditProfileScreen() {
         firstName: profile.firstName || "",
         lastName: profile.lastName || "",
         phone: profile.phone || "",
+        nationalId: profile.nationalId || profile.nationalIdNo || "",
         dateOfBirth: profile.dateOfBirth || "",
         gender: profile.gender || "",
         homeCountry: profile.homeCountry || "",
@@ -173,6 +234,7 @@ export default function EditProfileScreen() {
       firstName: formData.firstName,
       lastName: formData.lastName,
       phone: formData.phone,
+      nationalId: formData.nationalId,
       dateOfBirth: formData.dateOfBirth,
       gender: formData.gender,
       homeCountry: formData.homeCountry,
@@ -436,13 +498,49 @@ export default function EditProfileScreen() {
             required
           />
           <Input
-            label="Home Country"
+            label="National ID No"
+            value={formData.nationalId}
+            onChangeText={(value) =>
+              setFormData((prev) => ({ ...prev, nationalId: value }))
+            }
+            placeholder="e.g. 12345678"
+          />
+          <Input
+            label="Home County"
             value={formData.homeCountry}
             onChangeText={(value) =>
               setFormData((prev) => ({ ...prev, homeCountry: value }))
             }
+            onFocus={() => setCountyFocused(true)}
+            onBlur={() => setTimeout(() => setCountyFocused(false), 120)}
+            placeholder="Start typing your county"
             required
           />
+          {countySuggestions.length > 0 && (
+            <View style={{ marginTop: -8, marginBottom: 16 }}>
+              {countySuggestions.map((county) => (
+                <TouchableOpacity
+                  key={county}
+                  onPress={() =>
+                    setFormData((prev) => ({ ...prev, homeCountry: county }))
+                  }
+                  style={{
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                    backgroundColor: theme.surface,
+                    marginBottom: 8,
+                  }}
+                >
+                  <Text style={{ color: theme.text, fontSize: 12 }}>
+                    {county}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
           <Input
             label="Sub County"
             value={formData.subCounty}
@@ -571,15 +669,6 @@ export default function EditProfileScreen() {
             </Picker>
           </View>
 
-          <Input
-            label="Address"
-            value={formData.address}
-            onChangeText={(value) =>
-              setFormData((prev) => ({ ...prev, address: value }))
-            }
-            required
-          />
-
           {/* Emergency contact */}
           <Input
             label="Emergency Contact Name"
@@ -641,7 +730,7 @@ export default function EditProfileScreen() {
 
           {/* Location */}
           <LocationPickerField
-            title="Location for Medics"
+            title="My Location (optional)"
             address={formData.locationAddress}
             lat={formData.locationLat}
             lng={formData.locationLng}
@@ -687,7 +776,7 @@ export default function EditProfileScreen() {
                 marginBottom: 12,
               }}
             >
-              Upload a clear photo of your ID (front and back)
+              Upload a clear photo of your ID (front and back) (optional)
             </Text>
 
             <View style={{ flexDirection: "row", gap: 12 }}>

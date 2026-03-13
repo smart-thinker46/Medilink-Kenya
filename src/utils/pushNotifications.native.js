@@ -160,7 +160,7 @@ export const setupPushHandlers = () => {
     handleNotification: async () => ({
       shouldShowAlert: true,
       shouldPlaySound: true,
-      shouldSetBadge: false,
+      shouldSetBadge: true,
     }),
   });
 
@@ -169,6 +169,11 @@ export const setupPushHandlers = () => {
   const receivedSub = Notifications.addNotificationReceivedListener((notification) => {
     const content = notification?.request?.content;
     ensureVideoCallCategory(content).catch(() => undefined);
+    const data = parseData(content?.data);
+    const badgeValue = Number(data?.badge);
+    if (Number.isFinite(badgeValue)) {
+      Notifications.setBadgeCountAsync(Math.max(0, badgeValue)).catch(() => undefined);
+    }
   });
 
   const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
@@ -183,4 +188,11 @@ export const setupPushHandlers = () => {
       // no-op
     }
   };
+};
+
+export const syncBadgeCount = async (count) => {
+  if (Platform.OS === "web") return;
+  const value = Number(count);
+  if (!Number.isFinite(value)) return;
+  await Notifications.setBadgeCountAsync(Math.max(0, value)).catch(() => undefined);
 };

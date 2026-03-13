@@ -2,12 +2,13 @@ import React, { useMemo, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, FlatList, TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MotiView } from "moti";
-import { ArrowLeft, MapPin, Phone, Search } from "lucide-react-native";
+import { ArrowLeft, MapPin, Phone, Search, Check, X, MessageCircle } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
+import { useToast } from "@/components/ToastProvider";
 import apiClient from "@/utils/api";
 import LocationPreview from "@/components/LocationPreview";
 import { getDistanceKm } from "@/utils/locationHelpers";
@@ -19,7 +20,9 @@ export default function MedicPatientsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme, isDark, refreshInterval, batterySaver } = useAppTheme();
+  const { showToast } = useToast();
   const { isUserOnline } = useOnlineUsers();
+  const queryClient = useQueryClient();
   const {
     isSuperAdmin,
     medicUserId,
@@ -28,6 +31,7 @@ export default function MedicPatientsScreen() {
     isLoadingScope,
   } = useMedicScope();
   const [searchQuery, setSearchQuery] = useState("");
+  const [bookingSearchQuery, setBookingSearchQuery] = useState("");
   const [quickFilters, setQuickFilters] = useState([]);
 
   const patientsQuery = useQuery({
@@ -38,7 +42,107 @@ export default function MedicPatientsScreen() {
       }),
     enabled: Boolean(medicUserId),
   });
-  const patientsRaw = patientsQuery.data?.items || patientsQuery.data || [];
+  const recordsRaw = patientsQuery.data?.items || patientsQuery.data || [];
+  const appointmentsQuery = useQuery({
+    queryKey: ["appointments", "medic-requests", medicUserId],
+    queryFn: () => apiClient.getAppointments(),
+    enabled: Boolean(medicUserId),
+  });
+  const appointmentItems = useMemo(() => {
+    const items = appointmentsQuery.data?.items || appointmentsQuery.data || [];
+    return items.filter((appt) => String(appt.medicId || appt.medic_id || "") === String(medicUserId || ""));
+  }, [appointmentsQuery.data, medicUserId]);
+  const pendingAppointmentsByPatient = useMemo(() => {
+    const map = new Map();
+    appointmentItems.forEach((appt) => {
+      const status = String(appt.status || "").toLowerCase();
+      if (status !== "pending" && status !== "rescheduled") return;
+      const patientId = appt.patientId || appt.patient_id;
+      if (!patientId) return;
+      if (!map.has(String(patientId))) {
+        map.set(String(patientId), {
+          appointmentId: appt.id,
+          status,
+        });
+      }
+    });
+    return map;
+  }, [appointmentItems]);
+  const bookedPatientIds = useMemo(() => {
+    const ids = new Set();
+    appointmentItems.forEach((appt) => {
+      const status = String(appt.status || "").toLowerCase();
+      if (status === "cancelled" || status === "canceled") return;
+      const patientId = appt.patientId || appt.patient_id;
+      if (patientId) ids.add(String(patientId));
+    });
+    return ids;
+  }, [appointmentItems]);
+  const bookingRequests = useMemo(
+    () =>
+      appointmentItems.filter((appt) => {
+        const status = String(appt.status || "").toLowerCase();
+        return status === "pending" || status === "rescheduled";
+      }),
+    [appointmentItems],
+  );
+  const filteredBookingRequests = useMemo(() => {
+    const query = bookingSearchQuery.trim().toLowerCase();
+    if (!query) return bookingRequests;
+    return bookingRequests.filter((appt) => {
+      const haystack = [
+        appt.patientName,
+        appt.patient_name,
+        appt.date,
+        appt.time,
+        appt.mode,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [bookingRequests, bookingSearchQuery]);
+  const updateAppointmentMutation = useMutation({
+    mutationFn: ({ id, status }) => apiClient.updateAppointment(id, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["appointments", "medic-requests", medicUserId] });
+      queryClient.invalidateQueries({ queryKey: ["medic-patients", medicUserId] });
+    },
+    onError: (error) => {
+      showToast(error.message || "Appointment update failed.", "error");
+    },
+  });
+
+  const patientsRaw = useMemo(() => {
+    const combined = new Map();
+    recordsRaw.forEach((item) => {
+      const key = item.patientId || item.id;
+      if (!key) return;
+      if (!bookedPatientIds.has(String(key))) return;
+      combined.set(String(key), {
+        ...item,
+        source: "record",
+      });
+    });
+    appointmentItems.forEach((appt) => {
+      const key = appt.patientId || appt.patient_id;
+      if (!key) return;
+      if (!bookedPatientIds.has(String(key))) return;
+      if (combined.has(String(key))) return;
+      const pendingInfo = pendingAppointmentsByPatient.get(String(key));
+      combined.set(String(key), {
+        id: key,
+        patientId: key,
+        patientName: appt.patientName || appt.patient_name || "Patient",
+        condition: "Appointment request",
+        source: "appointment",
+        bookingStatus: pendingInfo?.status || String(appt.status || "").toLowerCase(),
+        appointmentId: pendingInfo?.appointmentId || appt.id,
+      });
+    });
+    return Array.from(combined.values());
+  }, [recordsRaw, appointmentItems, bookedPatientIds, pendingAppointmentsByPatient]);
   const myLocationQuery = useQuery({
     queryKey: ["my-location"],
     queryFn: () => apiClient.getMyLocation(),
@@ -126,6 +230,16 @@ export default function MedicPatientsScreen() {
       return matchesSearch && matchesQuickFilter;
     });
   }, [patients, normalizedSearch, quickFilters, linkedMap, myLocation, isUserOnline]);
+
+  const handleRequestAccess = (item) => {
+    const appointmentId = item?.appointmentId;
+    if (!appointmentId) {
+      showToast("No pending appointment found for this patient.", "warning");
+      return;
+    }
+    updateAppointmentMutation.mutate({ id: appointmentId, status: "access_requested" });
+    showToast("Access request sent to patient.", "success");
+  };
 
   return (
     <ScreenLayout>
@@ -246,6 +360,117 @@ export default function MedicPatientsScreen() {
           </View>
         </View>
 
+        {bookingRequests.length > 0 && (
+          <View style={{ paddingHorizontal: 24, marginBottom: 16 }}>
+            <Text
+              style={{
+                fontSize: 16,
+                fontFamily: "Inter_600SemiBold",
+                color: theme.text,
+                marginBottom: 10,
+              }}
+            >
+              Booking Requests
+            </Text>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: theme.surface,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: theme.border,
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                marginBottom: 10,
+              }}
+            >
+              <Search color={theme.textSecondary} size={14} />
+              <TextInput
+                value={bookingSearchQuery}
+                onChangeText={setBookingSearchQuery}
+                placeholder="Search booking requests..."
+                placeholderTextColor={theme.textTertiary}
+                style={{
+                  flex: 1,
+                  marginLeft: 8,
+                  color: theme.text,
+                  fontSize: 13,
+                  fontFamily: "Inter_400Regular",
+                }}
+              />
+            </View>
+            {filteredBookingRequests.slice(0, 5).map((appt) => (
+              <View
+                key={appt.id}
+                style={{
+                  backgroundColor: theme.card,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  padding: 12,
+                  marginBottom: 10,
+                }}
+              >
+                <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: theme.text }}>
+                  {appt.patientName || "Patient"}
+                </Text>
+                <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 4 }}>
+                  {appt.date || "--"} • {appt.time || "--"} • {String(appt.mode || "video")}
+                </Text>
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      backgroundColor: `${theme.success}18`,
+                      borderRadius: 10,
+                      paddingVertical: 8,
+                      alignItems: "center",
+                      flexDirection: "row",
+                      justifyContent: "center",
+                    }}
+                    onPress={() => updateAppointmentMutation.mutate({ id: appt.id, status: "confirmed" })}
+                  >
+                    <Check color={theme.success} size={14} />
+                    <Text style={{ fontSize: 12, color: theme.success, marginLeft: 6, fontFamily: "Inter_600SemiBold" }}>
+                      Accept
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      backgroundColor: `${theme.error}18`,
+                      borderRadius: 10,
+                      paddingVertical: 8,
+                      alignItems: "center",
+                      flexDirection: "row",
+                      justifyContent: "center",
+                    }}
+                    onPress={() => updateAppointmentMutation.mutate({ id: appt.id, status: "cancelled" })}
+                  >
+                    <X color={theme.error} size={14} />
+                    <Text style={{ fontSize: 12, color: theme.error, marginLeft: 6, fontFamily: "Inter_600SemiBold" }}>
+                      Reject
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+            {filteredBookingRequests.length === 0 ? (
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontFamily: "Inter_400Regular",
+                  color: theme.textSecondary,
+                  marginTop: 6,
+                }}
+              >
+                No booking requests match your search.
+              </Text>
+            ) : null}
+          </View>
+        )}
+
         <FlatList
           data={filteredPatients}
           keyExtractor={(item, index) => item.id || `patient-${index}`}
@@ -329,6 +554,31 @@ export default function MedicPatientsScreen() {
                     );
                   })()}
                 </View>
+
+                {item.source === "appointment" &&
+                (item.bookingStatus === "pending" || item.bookingStatus === "rescheduled") ? (
+                  <View style={{ marginTop: 12 }}>
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: `${theme.primary}18`,
+                        borderRadius: 10,
+                        paddingVertical: 8,
+                        alignItems: "center",
+                      }}
+                      onPress={() => handleRequestAccess(item)}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontFamily: "Inter_600SemiBold",
+                          color: theme.primary,
+                        }}
+                      >
+                        Request Access
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
                 <Text
                   style={{
                     fontSize: 13,
@@ -366,6 +616,36 @@ export default function MedicPatientsScreen() {
                 </View>
 
                 <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      backgroundColor: theme.surface,
+                      borderRadius: 12,
+                      paddingVertical: 10,
+                      alignItems: "center",
+                      flexDirection: "row",
+                      justifyContent: "center",
+                      borderWidth: 1,
+                      borderColor: theme.border,
+                    }}
+                    onPress={() => {
+                      const targetId = item.patientId || item.id;
+                      if (!targetId) return;
+                      router.push(`/(app)/(medic)/chat?patientId=${targetId}`);
+                    }}
+                  >
+                    <MessageCircle color={theme.textSecondary} size={16} />
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontFamily: "Inter_500Medium",
+                        color: theme.textSecondary,
+                        marginLeft: 6,
+                      }}
+                    >
+                      Message
+                    </Text>
+                  </TouchableOpacity>
                   <TouchableOpacity
                     style={{
                       flex: 1,

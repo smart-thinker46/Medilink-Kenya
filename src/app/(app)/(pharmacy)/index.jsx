@@ -42,6 +42,7 @@ import { useAuthStore } from "@/utils/auth/store";
 import { getFirstName, getTimeGreeting } from "@/utils/greeting";
 import usePharmacyScope from "@/utils/usePharmacyScope";
 import PharmacyScopeSelector from "@/components/PharmacyScopeSelector";
+import UserAvatar from "@/components/UserAvatar";
 
 export default function PharmacyHomeScreen() {
   const router = useRouter();
@@ -52,6 +53,7 @@ export default function PharmacyHomeScreen() {
   const { profile } = usePharmacyProfile();
   const { unreadCount } = useNotifications();
   const { auth } = useAuthStore();
+  const avatarUser = { ...(auth?.user || {}), ...(profile || {}) };
   const firstName = getFirstName(auth?.user, "Pharmacy Admin");
   const timeGreeting = getTimeGreeting();
   const {
@@ -333,71 +335,81 @@ export default function PharmacyHomeScreen() {
               >
               {timeGreeting},
             </Text>
-            <Text
-              style={{
-                fontSize: 24,
-                fontFamily: "Nunito_700Bold",
-                color: theme.text,
-              }}
-            >
-              {firstName}
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              backgroundColor: theme.surface,
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-            onPress={() => router.push("/(app)/(shared)/notifications")}
-          >
-            <Bell color={theme.iconColor} size={20} />
-            {unreadCount > 0 && (
-              <View
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <Text
                 style={{
-                  position: "absolute",
-                  top: -2,
-                  right: -2,
-                  backgroundColor: theme.error,
-                  borderRadius: 10,
-                  minWidth: 18,
-                  height: 18,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  paddingHorizontal: 4,
+                  fontSize: 24,
+                  fontFamily: "Nunito_700Bold",
+                  color: theme.text,
                 }}
               >
-                <Text
+                {firstName}
+              </Text>
+              <UserAvatar
+                user={avatarUser}
+                size={34}
+                backgroundColor={theme.surface}
+                borderColor={theme.border}
+                textColor={theme.textSecondary}
+              />
+            </View>
+          </View>
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <TouchableOpacity
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: theme.surface,
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+              onPress={() => router.push("/(app)/(shared)/notifications")}
+            >
+              <Bell color={theme.iconColor} size={20} />
+              {unreadCount > 0 && (
+                <View
                   style={{
-                    fontSize: 10,
-                    fontFamily: "Inter_600SemiBold",
-                    color: "#FFFFFF",
+                    position: "absolute",
+                    top: -2,
+                    right: -2,
+                    backgroundColor: theme.error,
+                    borderRadius: 10,
+                    minWidth: 18,
+                    height: 18,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    paddingHorizontal: 4,
                   }}
                 >
-                  {unreadCount}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      fontFamily: "Inter_600SemiBold",
+                      color: "#FFFFFF",
+                    }}
+                  >
+                    {unreadCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              backgroundColor: theme.surface,
-              justifyContent: "center",
-              alignItems: "center",
-              marginLeft: 12,
-            }}
-            onPress={() => router.push("/(app)/(shared)/settings")}
-          >
-            <Settings color={theme.iconColor} size={20} />
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: theme.surface,
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+              onPress={() => router.push("/(app)/(shared)/settings")}
+            >
+              <Settings color={theme.iconColor} size={20} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={{ paddingHorizontal: 24 }}>

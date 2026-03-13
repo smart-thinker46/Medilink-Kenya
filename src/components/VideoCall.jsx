@@ -71,6 +71,7 @@ export default function VideoCall({
   const [streamSdk, setStreamSdk] = useState(null);
   const [streamClient, setStreamClient] = useState(null);
   const [streamCall, setStreamCall] = useState(null);
+  const isWeb = Platform.OS === "web";
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [facing, setFacing] = useState("front");
@@ -82,6 +83,7 @@ export default function VideoCall({
   const [showControls, setShowControls] = useState(true);
   const [isRingtoneEnabled, setIsRingtoneEnabled] = useState(true);
   const [showIncomingBanner, setShowIncomingBanner] = useState(false);
+  const [autoFallbackNotice, setAutoFallbackNotice] = useState(false);
   const isExpoGo = Constants.appOwnership === "expo";
   const streamSession = callSession?.provider === "stream" ? callSession : null;
   const hasStream =
@@ -94,8 +96,18 @@ export default function VideoCall({
         streamSdk?.StreamCall &&
         streamSdk?.CallContent,
     );
+  const showWebFallback = isWeb && !hasStream;
   const canRecord = isPremium;
   const isAudioOnly = callMode === "audio";
+  const connectionLabel = (() => {
+    if (isOnHold) return "On hold";
+    if (callStatus === "incoming") return "Incoming";
+    if (callStatus === "connecting" || callStatus === "ringing") return "Connecting";
+    if (callStatus === "active") {
+      return isAudioOnly || !isVideoEnabled ? "Audio only" : "Stable";
+    }
+    return "Idle";
+  })();
 
   const normalizeUnsubscribe = (subscription) => {
     if (typeof subscription === "function") return subscription;
@@ -106,7 +118,7 @@ export default function VideoCall({
   };
 
   useEffect(() => {
-    if (Platform.OS === "web" || isExpoGo) {
+    if (isWeb || isExpoGo) {
       setStreamSdk(null);
       return;
     }
@@ -120,10 +132,10 @@ export default function VideoCall({
   }, [isExpoGo]);
 
   useEffect(() => {
-    if (!cameraPermission?.granted && isActive && isVideoEnabled) {
+    if (!isWeb && !cameraPermission?.granted && isActive && isVideoEnabled) {
       requestCameraPermission();
     }
-  }, [isActive, cameraPermission, isVideoEnabled]);
+  }, [isActive, cameraPermission, isVideoEnabled, isWeb]);
 
   useEffect(() => {
     if (callMode === "audio") {
@@ -258,6 +270,7 @@ export default function VideoCall({
   }, [showControls, isActive]);
 
   const toggleCameraFacing = () => {
+    if (isWeb) return;
     setFacing((current) => (current === "back" ? "front" : "back"));
     if (hasStream) {
       streamCallRef.current?.camera?.flip?.();
@@ -266,6 +279,13 @@ export default function VideoCall({
   };
 
   const handleToggleVideo = () => {
+    if (showWebFallback) {
+      Alert.alert(
+        "Web limitation",
+        "Video preview is limited on the web. Use the mobile app for full video calls.",
+      );
+      return;
+    }
     const next = !isVideoEnabled;
     setIsVideoEnabled(next);
     if (hasStream) {
@@ -330,6 +350,13 @@ export default function VideoCall({
   };
 
   const startRecording = async () => {
+    if (isWeb) {
+      Alert.alert(
+        "Web limitation",
+        "Recording is only available in the mobile app.",
+      );
+      return;
+    }
     if (!cameraRef.current) return;
 
     try {
@@ -394,6 +421,23 @@ export default function VideoCall({
     }
     return undefined;
   }, [callStatus, incomingCall, showIncomingBanner]);
+
+  useEffect(() => {
+    if (!isActive) {
+      setAutoFallbackNotice(false);
+      return undefined;
+    }
+    if (callStatus !== "connecting" || !isVideoEnabled || isAudioOnly) {
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      if (callStatus === "connecting" && isVideoEnabled && !isAudioOnly) {
+        handleToggleVideo();
+        setAutoFallbackNotice(true);
+      }
+    }, 15000);
+    return () => clearTimeout(timer);
+  }, [callStatus, isVideoEnabled, isAudioOnly, isActive]);
 
   if (callStatus === "incoming" && incomingCall) {
     return (
@@ -499,7 +543,7 @@ export default function VideoCall({
 
   if (!isActive) return null;
 
-  if (!cameraPermission?.granted && !isAudioOnly) {
+  if (!isWeb && !cameraPermission?.granted && !isAudioOnly) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.permissionContainer}>
@@ -543,7 +587,7 @@ export default function VideoCall({
           activeOpacity={0.8}
         >
           <View style={styles.minimizedVideoContainer}>
-            {isVideoEnabled ? (
+            {isVideoEnabled && !isWeb ? (
               <CameraView
                 style={styles.minimizedCamera}
                 facing={facing}
@@ -617,6 +661,30 @@ export default function VideoCall({
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
+      {showWebFallback && (
+        <View
+          style={[
+            styles.webFallbackBanner,
+            { backgroundColor: theme.warning, top: insets.top + 8 },
+          ]}
+        >
+          <Text style={styles.webFallbackText}>
+            Web calls are audio-first. For full video calling, use the mobile app.
+          </Text>
+        </View>
+      )}
+      {autoFallbackNotice && (
+        <View
+          style={[
+            styles.fallbackNotice,
+            { backgroundColor: theme.warning, top: insets.top + 8 },
+          ]}
+        >
+          <Text style={styles.fallbackNoticeText}>
+            Connection is unstable. Switched to audio.
+          </Text>
+        </View>
+      )}
       {/* Remote Video (Full Screen) */}
       <View style={styles.remoteVideoContainer}>
         {remoteVideoUrl && !isOnHold && !isAudioOnly ? (
@@ -697,7 +765,7 @@ export default function VideoCall({
           },
         ]}
       >
-        {isVideoEnabled ? (
+        {isVideoEnabled && !isWeb ? (
           <CameraView
             style={styles.localVideo}
             facing={facing}
@@ -763,6 +831,9 @@ export default function VideoCall({
               ]}
             >
               {callStatusLabel() || formatCallDuration(callDuration)}
+            </Text>
+            <Text style={[styles.callHeaderMeta, { color: theme.textSecondary }]}>
+              {connectionLabel}
             </Text>
           </View>
 
@@ -838,6 +909,7 @@ export default function VideoCall({
                 styles.controlButton,
                 {
                   backgroundColor: isVideoEnabled ? theme.surface : theme.error,
+                  opacity: showWebFallback ? 0.6 : 1,
                 },
               ]}
               onPress={handleToggleVideo}
@@ -1030,6 +1102,40 @@ const styles = StyleSheet.create({
   },
   callHeaderSubtitle: {
     fontSize: 14,
+  },
+  callHeaderMeta: {
+    fontSize: 11,
+    marginLeft: 10,
+  },
+  fallbackNotice: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    zIndex: 9999,
+  },
+  fallbackNoticeText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    textAlign: "center",
+  },
+  webFallbackBanner: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    zIndex: 9999,
+  },
+  webFallbackText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    textAlign: "center",
   },
   minimizeButton: {
     width: 40,

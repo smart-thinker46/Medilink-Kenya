@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { View, Text, TouchableOpacity, ScrollView, TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, CreditCard } from "lucide-react-native";
+import { ArrowLeft } from "lucide-react-native";
 import { useQuery, useMutation } from "@tanstack/react-query";
 
 import ScreenLayout from "@/components/ScreenLayout";
@@ -11,10 +11,6 @@ import apiClient from "@/utils/api";
 import { useToast } from "@/components/ToastProvider";
 import { exportReceipt } from "@/utils/receiptExport";
 import { useAuthStore } from "@/utils/auth/store";
-
-const METHOD_ICONS = {
-  intasend: CreditCard,
-};
 
 const ROLE_LABELS = {
   MEDIC: "Medics",
@@ -38,25 +34,14 @@ export default function PaymentCheckoutScreen() {
   const [selectedRole, setSelectedRole] = useState(roles[0]);
   const [recipientId, setRecipientId] = useState("");
   const [amount, setAmount] = useState("");
-  const [selectedMethod, setSelectedMethod] = useState(null);
   const [currency, setCurrency] = useState("KES");
+  const selectedMethod = "intasend";
 
-  const methodsQuery = useQuery({
-    queryKey: ["payment-methods"],
-    queryFn: () => apiClient.getPaymentMethods(),
-  });
-  const methods = methodsQuery.data || [];
   const ratesQuery = useQuery({
     queryKey: ["payment-rates"],
     queryFn: () => apiClient.getPaymentRates(),
   });
   const usdKesRate = Number(ratesQuery.data?.USD_KES || 150);
-
-  useEffect(() => {
-    if (!selectedMethod && methods.length > 0) {
-      setSelectedMethod(methods[0]?.id || "intasend");
-    }
-  }, [methods, selectedMethod]);
 
   const medicsQuery = useQuery({
     queryKey: ["payment-medics"],
@@ -74,7 +59,6 @@ export default function PaymentCheckoutScreen() {
       const numericAmount = Number(amount);
       if (!recipientId) throw new Error("Select a recipient");
       if (!numericAmount || numericAmount <= 0) throw new Error("Enter a valid amount");
-      if (!selectedMethod) throw new Error("Select a payment method");
       return apiClient.createPayment({
         amount: numericAmount,
         currency,
@@ -275,47 +259,9 @@ export default function PaymentCheckoutScreen() {
           </Text>
         )}
 
-        <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: theme.text, marginBottom: 10 }}>
-          Select Payment Method
+        <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 10 }}>
+          Payments are processed via IntaSend.
         </Text>
-
-        {methods.map((method) => {
-          const Icon = METHOD_ICONS[method.id] || CreditCard;
-          return (
-            <TouchableOpacity
-              key={method.id}
-              style={{
-                backgroundColor: theme.card,
-                borderRadius: 14,
-                padding: 14,
-                flexDirection: "row",
-                alignItems: "center",
-                marginBottom: 10,
-                borderWidth: selectedMethod === method.id ? 2 : 1,
-                borderColor:
-                  selectedMethod === method.id ? theme.primary : theme.border,
-              }}
-              onPress={() => setSelectedMethod(method.id)}
-            >
-              <View
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
-                  backgroundColor: theme.surface,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginRight: 12,
-                }}
-              >
-                <Icon color={theme.iconColor} size={18} />
-              </View>
-              <Text style={{ fontSize: 14, fontFamily: "Inter_500Medium", color: theme.text }}>
-                {method.name}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
 
         <TouchableOpacity
           style={{

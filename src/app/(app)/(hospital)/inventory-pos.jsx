@@ -46,7 +46,7 @@ export default function HospitalInventoryPosScreen() {
 
   const [query, setQuery] = useState("");
   const [cart, setCart] = useState([]);
-  const [paymentMethod, setPaymentMethod] = useState("intasend");
+  const paymentMethod = "intasend";
   const [customerPhone, setCustomerPhone] = useState(auth?.user?.phone || "");
 
   const productsQuery = useQuery({
@@ -54,11 +54,6 @@ export default function HospitalInventoryPosScreen() {
     queryFn: () => apiClient.getHospitalInventoryProducts(hospitalTenantId),
     enabled: Boolean(hospitalTenantId),
   });
-  const methodsQuery = useQuery({
-    queryKey: ["payment-methods"],
-    queryFn: () => apiClient.getPaymentMethods(),
-  });
-  const methods = methodsQuery.data || [];
 
   const products = productsQuery.data || [];
   const filtered = products.filter((product) => {
@@ -180,19 +175,17 @@ export default function HospitalInventoryPosScreen() {
         notes: "Hospital inventory POS sale",
       });
 
-      if (paymentMethod) {
-        await apiClient.createPayment({
-          amount: total,
-          currency: "KES",
-          method: paymentMethod,
-          type: "ORDER",
-          orderId: order?.id,
-          recipientId: auth?.user?.id,
-          recipientRole: "HOSPITAL_ADMIN",
-          phone: customerPhone || auth?.user?.phone,
-          description: "Hospital inventory sale payment",
-        });
-      }
+      await apiClient.createPayment({
+        amount: total,
+        currency: "KES",
+        method: paymentMethod,
+        type: "ORDER",
+        orderId: order?.id,
+        recipientId: auth?.user?.id,
+        recipientRole: "HOSPITAL_ADMIN",
+        phone: customerPhone || auth?.user?.phone,
+        description: "Hospital inventory sale payment",
+      });
 
       queryClient.invalidateQueries({
         queryKey: ["hospital-inventory-products", hospitalTenantId],
@@ -384,34 +377,9 @@ export default function HospitalInventoryPosScreen() {
             </Text>
           </View>
 
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-            {methods.map((method) => (
-              <TouchableOpacity
-                key={method.id}
-                style={{
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor:
-                    paymentMethod === method.id ? theme.primary : theme.border,
-                  backgroundColor:
-                    paymentMethod === method.id ? `${theme.primary}20` : theme.surface,
-                }}
-                onPress={() => setPaymentMethod(method.id)}
-              >
-                <Text
-                  style={{
-                    color:
-                      paymentMethod === method.id ? theme.primary : theme.textSecondary,
-                    fontSize: 12,
-                  }}
-                >
-                  {method.name || method.id}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <Text style={{ color: theme.textSecondary, fontSize: 12, marginBottom: 8 }}>
+            Payments are processed via IntaSend.
+          </Text>
 
           <View
             style={{

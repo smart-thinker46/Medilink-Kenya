@@ -7,9 +7,8 @@ import { useQuery } from "@tanstack/react-query";
 import DateTimePicker from "@react-native-community/datetimepicker";
 
 import ScreenLayout from "@/components/ScreenLayout";
-import VideoCall from "@/components/VideoCall";
 import { useAppTheme } from "@/components/ThemeProvider";
-import { useVideoCall } from "@/utils/useVideoCall";
+import { useVideoCallContext as useVideoCall } from "@/utils/videoCallContext";
 import apiClient from "@/utils/api";
 import { useI18n } from "@/utils/i18n";
 import { shareCsv } from "@/utils/csvExport";
@@ -136,7 +135,7 @@ export default function PharmacyVideoCallScreen() {
         payment.amount,
         payment.method,
         payment.status,
-        payment.type,
+        payment.description || payment.type || "Payment",
         payment.minutes || "",
         payment.createdAt,
       ]),
@@ -150,7 +149,7 @@ export default function PharmacyVideoCallScreen() {
         "Amount",
         "Method",
         "Status",
-        "Type",
+        "Description",
         "Minutes",
         "Created At",
       ],
@@ -168,7 +167,7 @@ export default function PharmacyVideoCallScreen() {
         "Amount",
         "Method",
         "Status",
-        "Type",
+        "Description",
         "Minutes",
         "Created At",
       ],
@@ -177,7 +176,7 @@ export default function PharmacyVideoCallScreen() {
         payment.amount,
         payment.method,
         payment.status,
-        payment.type,
+        payment.description || payment.type || "Payment",
         payment.minutes || "",
         payment.createdAt,
       ]),
@@ -274,43 +273,6 @@ export default function PharmacyVideoCallScreen() {
             </Text>
           )}
         </View>
-
-        <VideoCall
-          isActive={Boolean(currentCall)}
-          incomingCall={incomingCall}
-          participantName={currentCall?.participantName}
-          participantRole={currentCall?.participantRole}
-          callMode={currentCall?.mode || "video"}
-          callStatus={callStatus}
-          callDuration={callDuration}
-          callType={currentCall?.type || "consultation"}
-          sessionId={currentCall?.sessionId}
-          remoteVideoUrl={currentCall?.remoteVideoUrl}
-          callSession={currentCall?.callSession}
-          isPremium={isPremium}
-          onAcceptCall={() => {
-            if (incomingCall?.sessionId) {
-              answerCall(incomingCall.sessionId, {
-                participantName: incomingCall.participantName,
-                participantRole: incomingCall.participantRole,
-                participantId: incomingCall.participantId,
-                type: incomingCall.type,
-                mode: incomingCall.mode,
-              });
-            }
-          }}
-          onRejectCall={() => {
-            if (incomingCall?.sessionId) {
-              rejectCall(incomingCall.sessionId);
-            }
-          }}
-          onEndCall={() => endCall()}
-          onToggleVideo={toggleVideo}
-          onToggleAudio={toggleAudio}
-          onToggleCamera={toggleCamera}
-          onToggleHold={toggleHold}
-          onRemoteJoined={() => markCallConnected()}
-        />
 
         <View style={{ paddingHorizontal: 24, marginTop: 12 }}>
           <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: theme.text }}>
@@ -494,6 +456,9 @@ export default function PharmacyVideoCallScreen() {
                       </Text>
                     </View>
                   </View>
+                  <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 4 }}>
+                    {payment.description || payment.type || "Payment"}
+                  </Text>
                   <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 4 }}>
                     {formatDateTime ? formatDateTime(payment.createdAt) : payment.createdAt}
                   </Text>

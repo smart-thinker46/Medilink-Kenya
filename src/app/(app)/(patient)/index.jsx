@@ -27,6 +27,7 @@ import {
   Mic,
   User,
   Briefcase,
+  Pill,
 } from "lucide-react-native";
 import { usePathname, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
@@ -40,16 +41,18 @@ import { getProfileCompletion } from "@/utils/profileCompletion";
 import { useNotifications } from "@/utils/useNotifications";
 import { useI18n } from "@/utils/i18n";
 import { getFirstName, getTimeGreeting } from "@/utils/greeting";
+import UserAvatar from "@/components/UserAvatar";
 
 export default function PatientHomeScreen() {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
-  const { theme, isDark } = useAppTheme();
+  const { theme, isDark, refreshInterval, batterySaver } = useAppTheme();
   const { t } = useI18n();
   const { auth } = useAuthStore();
   const { profile } = usePatientProfile();
+  const avatarUser = { ...(auth?.user || {}), ...(profile || {}) };
   const { unreadCount } = useNotifications();
   const firstName = getFirstName(auth?.user, "Patient");
   const timeGreeting = getTimeGreeting();
@@ -88,6 +91,7 @@ export default function PatientHomeScreen() {
   const appointmentsQuery = useQuery({
     queryKey: ["appointments", "patient-home"],
     queryFn: () => apiClient.getAppointments(),
+    refetchInterval: batterySaver ? false : refreshInterval,
   });
   const appointments = appointmentsQuery.data?.items || appointmentsQuery.data || [];
   const medicsList = medicsQuery.data?.items || medicsQuery.data || [];
@@ -150,16 +154,12 @@ export default function PatientHomeScreen() {
       onPress: () => router.push("/(app)/(shared)/ai-finder"),
     },
     {
-      id: "book-appointment",
-      title: t("book_appointment"),
-      description: t("book_appointment_desc"),
-      icon: Calendar,
+      id: "find-medicines",
+      title: "Find Medicines",
+      description: "Search pharmacies and drugs",
+      icon: Pill,
       color: theme.accent,
-      onPress: () =>
-        handleProtectedAction(() =>
-          router.push("/(app)/(patient)/book-appointment"),
-        ),
-      locked: !isProfileComplete,
+      onPress: () => router.push("/(app)/(patient)/pharmacy"),
     },
     {
       id: "medical-records",
@@ -168,6 +168,14 @@ export default function PatientHomeScreen() {
       icon: FileText,
       color: theme.success,
       onPress: () => router.push("/(app)/(patient)/medical-history"),
+    },
+    {
+      id: "payment-requests",
+      title: "Payment Requests",
+      description: "Review additional charges",
+      icon: CreditCard,
+      color: theme.warning,
+      onPress: () => router.push("/(app)/(patient)/payment-requests"),
     },
     {
       id: "ai-assistant",
@@ -206,8 +214,7 @@ export default function PatientHomeScreen() {
   const latestRecords = records.slice(0, 3);
   const sidebarLinks = [
     { key: "dashboard", title: "Dashboard", href: "/(app)/(patient)", icon: Home },
-    { key: "appointments", title: "Appointments", href: "/(app)/(patient)/appointments", icon: Calendar },
-    { key: "book", title: "Book Appointment", href: "/(app)/(patient)/book-appointment", icon: Calendar },
+    { key: "appointments", title: "My Appointments", href: "/(app)/(patient)/appointments", icon: Calendar },
     { key: "find-medics", title: "Find Medics", href: "/(app)/(patient)/search-medics", icon: Search },
     { key: "ai-finder", title: "AI Finder", href: "/(app)/(shared)/ai-finder", icon: Sparkles },
     { key: "jobs", title: "Jobs", href: "/(app)/(shared)/jobs", icon: Briefcase },
@@ -335,15 +342,24 @@ export default function PatientHomeScreen() {
             >
               {timeGreeting}
             </Text>
-            <Text
-              style={{
-                fontSize: 24,
-                fontFamily: "Nunito_700Bold",
-                color: theme.text,
-              }}
-            >
-              {firstName}
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <Text
+                style={{
+                  fontSize: 24,
+                  fontFamily: "Nunito_700Bold",
+                  color: theme.text,
+                }}
+              >
+                {firstName}
+              </Text>
+              <UserAvatar
+                user={avatarUser}
+                size={34}
+                backgroundColor={theme.surface}
+                borderColor={theme.border}
+                textColor={theme.textSecondary}
+              />
+            </View>
             <View style={{ marginTop: 10 }}>
               <View
                 style={{
@@ -387,9 +403,9 @@ export default function PatientHomeScreen() {
                     backgroundColor: theme.success,
                   }}
                 />
-              </View>
             </View>
           </View>
+        </View>
 
           <View style={{ flexDirection: "row", gap: 12 }}>
             <TouchableOpacity

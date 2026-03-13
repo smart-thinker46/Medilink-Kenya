@@ -31,7 +31,7 @@ import { useToast } from "@/components/ToastProvider";
 import apiClient from "@/utils/api";
 import { useHospitalProfile } from "@/utils/useHospitalProfile";
 import { getHospitalProfileCompletion } from "@/utils/hospitalProfileCompletion";
-import { useVideoCall } from "@/utils/useVideoCall";
+import { useVideoCallContext as useVideoCall } from "@/utils/videoCallContext";
 import LocationPreview from "@/components/LocationPreview";
 import { getDistanceKm } from "@/utils/locationHelpers";
 import { useOnlineUsers } from "@/utils/useOnlineUsers";

@@ -47,7 +47,6 @@ export default function HospitalEditProfileScreen() {
     specialties: "",
     operatingHours: "",
     workingDays: "",
-    services: "",
     paymentModes: "",
     patientVolume: "",
     verificationStatus: "",
@@ -99,9 +98,6 @@ export default function HospitalEditProfileScreen() {
         workingDays: Array.isArray(profile.workingDays)
           ? profile.workingDays.join(", ")
           : profile.workingDays || "",
-        services: Array.isArray(profile.services)
-          ? profile.services.join(", ")
-          : profile.services || "",
         paymentModes: Array.isArray(profile.paymentModes)
           ? profile.paymentModes.join(", ")
           : profile.paymentModes || "",
@@ -231,10 +227,6 @@ export default function HospitalEditProfileScreen() {
           .filter(Boolean),
         operatingHours: formData.operatingHours,
         workingDays: formData.workingDays
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean),
-        services: formData.services
           .split(",")
           .map((item) => item.trim())
           .filter(Boolean),
@@ -597,13 +589,6 @@ export default function HospitalEditProfileScreen() {
               setFormData((prev) => ({ ...prev, address: value }))
             }
             required
-          />
-          <Input
-            label="Services Offered (comma separated)"
-            value={formData.services}
-            onChangeText={(value) =>
-              setFormData((prev) => ({ ...prev, services: value }))
-            }
           />
           <Input
             label="Payment Modes (comma separated)"

@@ -15,6 +15,8 @@ import {
   Bell,
   History,
   Sparkles,
+  Users,
+  Heart,
 } from "lucide-react-native";
 import ResponsiveTabBar from "@/components/ResponsiveTabBar";
 import { useNotifications } from "@/utils/useNotifications";
@@ -35,6 +37,8 @@ export default function PharmacyTabLayout() {
   ];
 
   const moreLinks = [
+    { key: "online-users", title: "Online Users", href: "/(app)/(shared)/online-users", icon: Users },
+    { key: "health-hub", title: "Health Hub", href: "/(app)/(shared)/patient-health-hub-picker", icon: Heart },
     { key: "ai-assistant", title: "AI Assistant", href: "/(app)/(pharmacy)/ai-assistant", icon: Sparkles },
     { key: "profile", title: "Profile", href: "/(app)/(pharmacy)/profile", icon: User },
     { key: "analytics", title: "Analytics", href: "/(app)/(pharmacy)/analytics", icon: PieChart },

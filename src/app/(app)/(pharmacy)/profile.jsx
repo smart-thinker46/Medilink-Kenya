@@ -12,6 +12,7 @@ import { getPharmacyProfileCompletion } from "@/utils/pharmacyProfileCompletion"
 import { useAuthStore } from "@/utils/auth/store";
 import { useOnlineUsers } from "@/utils/useOnlineUsers";
 import OnlineStatusChip from "@/components/OnlineStatusChip";
+import UserAvatar from "@/components/UserAvatar";
 
 export default function PharmacyProfileScreen() {
   const router = useRouter();
@@ -38,6 +39,17 @@ export default function PharmacyProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={{ paddingHorizontal: 24, marginBottom: 24 }}>
+          <View style={{ marginBottom: 12 }}>
+            <UserAvatar
+              user={profile}
+              size={86}
+              backgroundColor={theme.surface}
+              borderColor={theme.border}
+              textColor={theme.textSecondary}
+              showStatus
+              isOnline={isOnline}
+            />
+          </View>
           <Text
             style={{
               fontSize: 24,

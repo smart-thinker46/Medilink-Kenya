@@ -67,6 +67,7 @@ export default function PatientAiAssistantScreen() {
   const [searchResults, setSearchResults] = useState([]);
   const [summary, setSummary] = useState(null);
   const [assistantAnswer, setAssistantAnswer] = useState("");
+  const [assistantConversationId, setAssistantConversationId] = useState("default");
   const [appointmentQuery, setAppointmentQuery] = useState("");
   const [appointmentResult, setAppointmentResult] = useState(null);
   const [medicationsInput, setMedicationsInput] = useState("");
@@ -99,7 +100,7 @@ export default function PatientAiAssistantScreen() {
     mutationFn: () =>
       apiClient.aiSearch({
         query: searchQuery,
-        include: ["medic", "hospital", "pharmacy"],
+        include: ["medic", "hospital", "pharmacy", "product"],
         limit: 10,
       }),
     onSuccess: (data) => setSearchResults(Array.isArray(data?.results) ? data.results : []),
@@ -136,8 +137,17 @@ export default function PatientAiAssistantScreen() {
   });
 
   const aiAssistantMutation = useMutation({
-    mutationFn: () => apiClient.aiAssistant({ query: assistantQuery }),
-    onSuccess: (data) => setAssistantAnswer(String(data?.answer || "")),
+    mutationFn: () =>
+      apiClient.aiAssistant({
+        query: assistantQuery,
+        conversationId: assistantConversationId || "default",
+      }),
+    onSuccess: (data) => {
+      setAssistantAnswer(String(data?.answer || ""));
+      if (data?.conversationId) {
+        setAssistantConversationId(String(data.conversationId));
+      }
+    },
     onError: (error) => showToast(error.message || "AI assistant unavailable.", "error"),
   });
 

@@ -14,6 +14,7 @@ import { useOnlineUsers } from "@/utils/useOnlineUsers";
 import OnlineStatusChip from "@/components/OnlineStatusChip";
 import useMedicScope from "@/utils/useMedicScope";
 import MedicScopeSelector from "@/components/MedicScopeSelector";
+import UserAvatar from "@/components/UserAvatar";
 
 export default function MedicProfileScreen() {
   const router = useRouter();
@@ -51,6 +52,17 @@ export default function MedicProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={{ paddingHorizontal: 24, marginBottom: 24 }}>
+          <View style={{ marginBottom: 12 }}>
+            <UserAvatar
+              user={displayProfile}
+              size={86}
+              backgroundColor={theme.surface}
+              borderColor={theme.border}
+              textColor={theme.textSecondary}
+              showStatus
+              isOnline={isOnline}
+            />
+          </View>
           <Text
             style={{
               fontSize: 24,

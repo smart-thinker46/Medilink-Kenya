@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, TouchableOpacity, ScrollView, TextInput, Image } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, Trash2, CreditCard } from "lucide-react-native";
+import { ArrowLeft, Trash2 } from "lucide-react-native";
 import { useQuery, useMutation } from "@tanstack/react-query";
 
 import ScreenLayout from "@/components/ScreenLayout";
@@ -12,10 +12,6 @@ import apiClient from "@/utils/api";
 import { useToast } from "@/components/ToastProvider";
 import { exportReceipt } from "@/utils/receiptExport";
 import { resolveMediaUrl } from "@/utils/media";
-
-const METHOD_ICONS = {
-  intasend: CreditCard,
-};
 
 export default function PatientCartScreen() {
   const router = useRouter();
@@ -32,7 +28,7 @@ export default function PatientCartScreen() {
       ? prescriptionIdParam.trim()
       : "";
 
-  const [paymentMethod, setPaymentMethod] = useState("intasend");
+  const paymentMethod = "intasend";
   const [currency, setCurrency] = useState("KES");
   const [phone, setPhone] = useState("");
   const [notes, setNotes] = useState("");
@@ -41,11 +37,6 @@ export default function PatientCartScreen() {
     load();
   }, [load]);
 
-  const methodsQuery = useQuery({
-    queryKey: ["payment-methods"],
-    queryFn: () => apiClient.getPaymentMethods(),
-  });
-  const methods = methodsQuery.data || [];
   const prescriptionQuery = useQuery({
     queryKey: ["medical-record", prescriptionId],
     queryFn: () => apiClient.getMedicalRecordById(prescriptionId),
@@ -88,7 +79,6 @@ export default function PatientCartScreen() {
         throw new Error("Cart has items from multiple pharmacies. Checkout one at a time.");
       }
       if (!pharmacyId) throw new Error("Missing pharmacy for this order");
-      if (!paymentMethod) throw new Error("Select a payment method");
       if (hasPrescriptionRequiredItems && !prescriptionId) {
         throw new Error(
           "This cart includes prescription-only items. Select a prescription from Medical Records first.",
@@ -394,45 +384,8 @@ export default function PatientCartScreen() {
             </View>
 
             <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 8 }}>
-              Payment Method
+              Payments are processed via IntaSend.
             </Text>
-            {methods.map((method) => {
-              const Icon = METHOD_ICONS[method.id] || CreditCard;
-              return (
-                <TouchableOpacity
-                  key={method.id}
-                  style={{
-                    backgroundColor: theme.card,
-                    borderRadius: 14,
-                    padding: 14,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    marginBottom: 10,
-                    borderWidth: paymentMethod === method.id ? 2 : 1,
-                    borderColor:
-                      paymentMethod === method.id ? theme.primary : theme.border,
-                  }}
-                  onPress={() => setPaymentMethod(method.id)}
-                >
-                  <View
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 20,
-                      backgroundColor: theme.surface,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      marginRight: 12,
-                    }}
-                  >
-                    <Icon color={theme.iconColor} size={18} />
-                  </View>
-                  <Text style={{ fontSize: 14, fontFamily: "Inter_500Medium", color: theme.text }}>
-                    {method.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
 
             <View style={{ marginBottom: 16 }}>
               <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 6 }}>

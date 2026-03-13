@@ -33,6 +33,7 @@ import { useQuery } from "@tanstack/react-query";
 import apiClient from "@/utils/api";
 import OnlineStatusChip from "@/components/OnlineStatusChip";
 import { useOnlineUsers } from "@/utils/useOnlineUsers";
+import UserAvatar from "@/components/UserAvatar";
 
 export default function PatientProfileScreen() {
   const router = useRouter();
@@ -41,6 +42,7 @@ export default function PatientProfileScreen() {
   const { auth, logout } = useAuthStore();
   const { isUserOnline } = useOnlineUsers();
   const { profile } = usePatientProfile();
+  const avatarUser = { ...(auth?.user || {}), ...(profile || {}) };
   const completion = getProfileCompletion(profile);
   const isOnline = isUserOnline(auth?.user);
 
@@ -420,28 +422,17 @@ export default function PatientProfileScreen() {
             }}
           >
             {/* Profile Avatar */}
-            <View
-              style={{
-                width: 100,
-                height: 100,
-                borderRadius: 50,
-                backgroundColor: "rgba(255,255,255,0.2)",
-                justifyContent: "center",
-                alignItems: "center",
-                marginBottom: 16,
-                borderWidth: 3,
-                borderColor: "rgba(255,255,255,0.3)",
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 36,
-                  fontFamily: "Nunito_700Bold",
-                  color: "#FFFFFF",
-                }}
-              >
-                {auth?.user?.firstName?.[0]?.toUpperCase() || "P"}
-              </Text>
+            <View style={{ marginBottom: 16 }}>
+              <UserAvatar
+                user={avatarUser}
+                size={100}
+                backgroundColor="rgba(255,255,255,0.2)"
+                borderColor="rgba(255,255,255,0.3)"
+                textColor="#FFFFFF"
+                textStyle={{ fontFamily: "Nunito_700Bold" }}
+                showStatus
+                isOnline={isOnline}
+              />
             </View>
 
             {/* User Info */}

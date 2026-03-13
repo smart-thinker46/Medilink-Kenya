@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   FlatList,
   Alert,
+  Modal,
+  TextInput,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MotiView } from "moti";
@@ -22,13 +24,12 @@ import {
   Filter,
 } from "lucide-react-native";
 import { useRouter } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import Button from "@/components/Button";
-import VideoCall from "@/components/VideoCall";
 import { useAppTheme } from "@/components/ThemeProvider";
-import { useVideoCall } from "@/utils/useVideoCall";
+import { useVideoCallContext as useVideoCall } from "@/utils/videoCallContext";
 import apiClient from "@/utils/api";
 import { usePatientProfile } from "@/utils/usePatientProfile";
 import { getProfileCompletion } from "@/utils/profileCompletion";
@@ -38,7 +39,8 @@ import { getDistanceKm } from "@/utils/locationHelpers";
 export default function AppointmentsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { theme, isDark } = useAppTheme();
+  const { theme, isDark, refreshInterval, batterySaver } = useAppTheme();
+  const queryClient = useQueryClient();
   const { profile } = usePatientProfile();
   const completion = getProfileCompletion(profile);
   const isProfileComplete = completion.percent >= 99;
@@ -61,6 +63,8 @@ export default function AppointmentsScreen() {
   } = useVideoCall();
 
   const [activeTab, setActiveTab] = useState("upcoming");
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelReason, setCancelReason] = useState("");
 
   // Handle video call initiation
   const handleStartVideoCall = async (appointment, mode = "video") => {
@@ -98,6 +102,19 @@ export default function AppointmentsScreen() {
   const appointmentsQuery = useQuery({
     queryKey: ["appointments"],
     queryFn: () => apiClient.getAppointments(),
+    refetchInterval: batterySaver ? false : refreshInterval,
+  });
+  const cancelMutation = useMutation({
+    mutationFn: ({ id, reason }) =>
+      apiClient.updateAppointment(id, { status: "cancelled", cancelReason: reason }),
+    onSuccess: () => {
+      setCancelTarget(null);
+      setCancelReason("");
+      queryClient.invalidateQueries({ queryKey: ["appointments"] });
+    },
+    onError: (error) => {
+      console.error("Cancel appointment failed", error);
+    },
   });
   const myLocationQuery = useQuery({
     queryKey: ["my-location"],
@@ -151,7 +168,10 @@ export default function AppointmentsScreen() {
     upcoming: sortByDistance(
       allAppointments.filter(
         (appointment) =>
-          appointment.status === "confirmed" || appointment.status === "pending",
+          appointment.status === "confirmed" ||
+          appointment.status === "pending" ||
+          appointment.status === "rescheduled" ||
+          appointment.status === "access_requested",
       ),
     ),
     past: sortByDistance(
@@ -172,6 +192,10 @@ export default function AppointmentsScreen() {
         return theme.success;
       case "pending":
         return theme.warning;
+      case "access_requested":
+        return theme.warning;
+      case "rescheduled":
+        return theme.warning;
       case "cancelled":
         return theme.error;
       case "completed":
@@ -190,6 +214,12 @@ export default function AppointmentsScreen() {
       default:
         return MapPin;
     }
+  };
+
+  const formatMoney = (value) => {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return "0";
+    return amount.toLocaleString();
   };
 
   const renderAppointmentCard = ({ item, index }) => (
@@ -218,7 +248,7 @@ export default function AppointmentsScreen() {
         }}
         activeOpacity={0.8}
         onPress={() =>
-          router.push(`/(app)/(patient)/appointment-details/${item.id}`)
+          router.push(`/(app)/(shared)/appointment-details/${item.id}`)
         }
       >
         {/* Header */}
@@ -375,11 +405,106 @@ export default function AppointmentsScreen() {
               marginLeft: "auto",
             }}
           >
-            KES {item.fee.toLocaleString()}
+            KES {formatMoney(item.fee ?? item.amount ?? item.price)}
           </Text>
         </View>
 
+        <TouchableOpacity
+          style={{
+            backgroundColor: `${theme.primary}12`,
+            borderRadius: 12,
+            paddingVertical: 10,
+            alignItems: "center",
+            marginBottom: 8,
+          }}
+          onPress={() =>
+            router.push(`/(app)/(shared)/appointment-details/${item.id}`)
+          }
+        >
+          <Text
+            style={{
+              fontSize: 13,
+              fontFamily: "Inter_600SemiBold",
+              color: theme.primary,
+            }}
+          >
+            View Details
+          </Text>
+        </TouchableOpacity>
+
         {/* Actions */}
+        {item.status === "access_requested" && activeTab === "upcoming" && (
+          <View
+            style={{
+              flexDirection: "row",
+              gap: 12,
+              paddingTop: 16,
+              borderTopWidth: 1,
+              borderTopColor: theme.border,
+            }}
+          >
+            <TouchableOpacity
+              style={{
+                flex: 1,
+                backgroundColor: `${theme.success}18`,
+                borderRadius: 12,
+                paddingVertical: 12,
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+              }}
+              activeOpacity={0.8}
+              onPress={() =>
+                apiClient
+                  .updateAppointment(item.id, { status: "confirmed" })
+                  .then(() => queryClient.invalidateQueries({ queryKey: ["appointments"] }))
+                  .catch((error) => console.error("Confirm access failed", error))
+              }
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontFamily: "Inter_600SemiBold",
+                  color: theme.success,
+                }}
+              >
+                Approve Access
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={{
+                flex: 1,
+                backgroundColor: `${theme.error}18`,
+                borderRadius: 12,
+                paddingVertical: 12,
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+              }}
+              activeOpacity={0.8}
+              onPress={() =>
+                apiClient
+                  .updateAppointment(item.id, {
+                    status: "cancelled",
+                    cancelReason: "Access denied by patient.",
+                  })
+                  .then(() => queryClient.invalidateQueries({ queryKey: ["appointments"] }))
+                  .catch((error) => console.error("Reject access failed", error))
+              }
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontFamily: "Inter_600SemiBold",
+                  color: theme.error,
+                }}
+              >
+                Decline
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {item.status === "confirmed" && activeTab === "upcoming" && (
           <View
             style={{
@@ -401,6 +526,11 @@ export default function AppointmentsScreen() {
                 alignItems: "center",
               }}
               activeOpacity={0.8}
+              onPress={() => {
+                const targetId = item.medicId || item.medic_id;
+                if (!targetId) return;
+                router.push(`/(app)/(patient)/chat?userId=${targetId}`);
+              }}
             >
               <MessageCircle color={theme.textSecondary} size={16} />
               <Text
@@ -492,6 +622,67 @@ export default function AppointmentsScreen() {
             height={80}
           />
         ) : null}
+
+        {["pending", "confirmed", "rescheduled"].includes(String(item.status)) && (
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+            <TouchableOpacity
+              style={{
+                flex: 1,
+                backgroundColor: `${theme.warning}20`,
+                borderRadius: 12,
+                paddingVertical: 10,
+                flexDirection: "row",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+              onPress={() =>
+                router.push(
+                  `/(app)/(patient)/book-appointment?appointmentId=${item.id}&medicId=${
+                    item.medicId || item.medic_id || ""
+                  }&reschedule=1`,
+                )
+              }
+            >
+              <Calendar color={theme.warning} size={16} />
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontFamily: "Inter_600SemiBold",
+                  color: theme.warning,
+                  marginLeft: 8,
+                }}
+              >
+                Reschedule
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={{
+                flex: 1,
+                backgroundColor: `${theme.error}20`,
+                borderRadius: 12,
+                paddingVertical: 10,
+                flexDirection: "row",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+              onPress={() => {
+                setCancelTarget(item);
+                setCancelReason("");
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontFamily: "Inter_600SemiBold",
+                  color: theme.error,
+                }}
+              >
+                Cancel
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </TouchableOpacity>
     </MotiView>
   );
@@ -539,7 +730,7 @@ export default function AppointmentsScreen() {
                 color: theme.text,
               }}
             >
-              Appointments
+              My Appointments
             </Text>
           </View>
 
@@ -665,6 +856,115 @@ export default function AppointmentsScreen() {
           )}
         />
 
+        <Modal
+          visible={Boolean(cancelTarget)}
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
+            setCancelTarget(null);
+            setCancelReason("");
+          }}
+        >
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.5)",
+              justifyContent: "center",
+              padding: 24,
+            }}
+          >
+            <View
+              style={{
+                backgroundColor: theme.card,
+                borderRadius: 16,
+                padding: 20,
+                borderWidth: 1,
+                borderColor: theme.border,
+              }}
+            >
+              <Text style={{ fontSize: 16, fontFamily: "Inter_600SemiBold", color: theme.text }}>
+                Cancel Appointment
+              </Text>
+              <Text
+                style={{
+                  fontSize: 12,
+                  color: theme.textSecondary,
+                  marginTop: 6,
+                  marginBottom: 12,
+                }}
+              >
+                Please share a reason for cancelling this appointment.
+              </Text>
+              <TextInput
+                value={cancelReason}
+                onChangeText={setCancelReason}
+                placeholder="Reason for cancellation"
+                placeholderTextColor={theme.textSecondary}
+                style={{
+                  minHeight: 80,
+                  backgroundColor: theme.surface,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  color: theme.text,
+                  fontFamily: "Inter_400Regular",
+                }}
+                multiline
+              />
+              <View style={{ flexDirection: "row", gap: 12, marginTop: 16 }}>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    paddingVertical: 10,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                    alignItems: "center",
+                  }}
+                  onPress={() => {
+                    setCancelTarget(null);
+                    setCancelReason("");
+                  }}
+                >
+                  <Text style={{ color: theme.textSecondary, fontFamily: "Inter_500Medium" }}>
+                    Dismiss
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    paddingVertical: 10,
+                    borderRadius: 12,
+                    backgroundColor: cancelReason.trim() ? theme.error : theme.surface,
+                    borderWidth: 1,
+                    borderColor: cancelReason.trim() ? theme.error : theme.border,
+                    alignItems: "center",
+                  }}
+                  disabled={!cancelReason.trim() || cancelMutation.isLoading}
+                  onPress={() => {
+                    if (!cancelTarget?.id) return;
+                    cancelMutation.mutate({
+                      id: cancelTarget.id,
+                      reason: cancelReason.trim(),
+                    });
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: cancelReason.trim() ? "#FFFFFF" : theme.textSecondary,
+                      fontFamily: "Inter_600SemiBold",
+                    }}
+                  >
+                    Confirm Cancel
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
         {/* Floating Action Button */}
         <View
           style={{
@@ -699,41 +999,6 @@ export default function AppointmentsScreen() {
           </TouchableOpacity>
         </View>
 
-        <VideoCall
-          isActive={Boolean(currentCall)}
-          incomingCall={incomingCall}
-          participantName={currentCall?.participantName}
-          participantRole={currentCall?.participantRole}
-          callMode={currentCall?.mode || "video"}
-          callStatus={callStatus}
-          callDuration={callDuration}
-          callType={currentCall?.type || "consultation"}
-          sessionId={currentCall?.sessionId}
-          remoteVideoUrl={currentCall?.remoteVideoUrl}
-          callSession={currentCall?.callSession}
-          onAcceptCall={() => {
-            if (incomingCall?.sessionId) {
-              answerCall(incomingCall.sessionId, {
-                participantName: incomingCall.participantName,
-                participantRole: incomingCall.participantRole,
-                participantId: incomingCall.participantId,
-                type: incomingCall.type,
-                mode: incomingCall.mode,
-              });
-            }
-          }}
-          onRejectCall={() => {
-            if (incomingCall?.sessionId) {
-              rejectCall(incomingCall.sessionId);
-            }
-          }}
-          onEndCall={() => endCall()}
-          onToggleVideo={toggleVideo}
-          onToggleAudio={toggleAudio}
-          onToggleCamera={toggleCamera}
-          onToggleHold={toggleHold}
-          onRemoteJoined={() => markCallConnected()}
-        />
       </View>
     </ScreenLayout>
   );

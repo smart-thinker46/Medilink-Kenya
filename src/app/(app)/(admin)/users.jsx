@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useRef } from "react";
 import { Alert, View, Text, ScrollView, TouchableOpacity, TextInput, Platform, BackHandler } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -20,17 +20,17 @@ import {
 } from "lucide-react-native";
 import { Picker } from "@react-native-picker/picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useAudioRecorder, RecordingPresets } from "expo-audio";
+import { useAudioRecorder, useAudioRecorderState, RecordingPresets } from "expo-audio";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
 import { useToast } from "@/components/ToastProvider";
 import apiClient from "@/utils/api";
 import { shareCsv, emailCsv } from "@/utils/csvExport";
-import { useVideoCall } from "@/utils/useVideoCall";
-import VideoCall from "@/components/VideoCall";
+import { useVideoCallContext as useVideoCall } from "@/utils/videoCallContext";
 import { useOnlineUsers } from "@/utils/useOnlineUsers";
 import { useAuthStore } from "@/utils/auth/store";
+import UserAvatar from "@/components/UserAvatar";
 
 const AI_LOCKED_MESSAGE =
   "AI is a premium feature and require to be unlocked for you to use it.";
@@ -116,7 +116,7 @@ export default function AdminUsersScreen() {
   const [editDrafts, setEditDrafts] = useState({});
   const [showCreate, setShowCreate] = useState(false);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const pageSize = 20;
   const [sortOrder, setSortOrder] = useState("newest");
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showStartPicker, setShowStartPicker] = useState(false);
@@ -140,14 +140,22 @@ export default function AdminUsersScreen() {
   });
   const [aiUserResponse, setAiUserResponse] = useState(null);
   const [isVoiceRecording, setIsVoiceRecording] = useState(false);
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const audioRecorder = useAudioRecorder({
+    ...RecordingPresets.HIGH_QUALITY,
+    isMeteringEnabled: true,
+  });
+  const recorderState = useAudioRecorderState(audioRecorder, 250);
   const webMediaRecorderRef = React.useRef(null);
   const webMediaStreamRef = React.useRef(null);
   const webAudioChunksRef = React.useRef([]);
+  const webSilenceCleanupRef = React.useRef(null);
+  const silenceLastSoundAtRef = useRef(0);
+  const silenceStartedAtRef = useRef(0);
+  const autoStopInFlightRef = useRef(false);
 
   React.useEffect(() => {
     setPage(1);
-  }, [roleFilter, activeFilter, search, statusFilter, onlineFilter, startDate, endDate, pageSize, sortOrder]);
+  }, [roleFilter, activeFilter, search, statusFilter, onlineFilter, startDate, endDate, sortOrder]);
 
   React.useEffect(() => {
     if (
@@ -186,8 +194,42 @@ export default function AdminUsersScreen() {
       if (stream?.getTracks) {
         stream.getTracks().forEach((track) => track.stop());
       }
+      if (webSilenceCleanupRef.current) {
+        webSilenceCleanupRef.current();
+        webSilenceCleanupRef.current = null;
+      }
     };
   }, [audioRecorder, isVoiceRecording]);
+
+  React.useEffect(() => {
+    if (!isVoiceRecording || Platform.OS === "web") {
+      silenceLastSoundAtRef.current = 0;
+      silenceStartedAtRef.current = 0;
+      autoStopInFlightRef.current = false;
+      return;
+    }
+    const metering = recorderState?.metering;
+    if (typeof metering !== "number") return;
+    const now = Date.now();
+    if (!silenceStartedAtRef.current) {
+      silenceStartedAtRef.current = now;
+    }
+    const threshold = metering >= 0 && metering <= 1 ? 0.02 : -45;
+    const isSilent = metering <= threshold;
+    if (!silenceLastSoundAtRef.current) {
+      silenceLastSoundAtRef.current = now;
+    }
+    if (!isSilent) {
+      silenceLastSoundAtRef.current = now;
+      return;
+    }
+    const silentFor = now - silenceLastSoundAtRef.current;
+    const recordedFor = now - silenceStartedAtRef.current;
+    if (recordedFor > 1200 && silentFor > 1200 && !autoStopInFlightRef.current) {
+      autoStopInFlightRef.current = true;
+      stopNativeRecordingAndTranscribe();
+    }
+  }, [isVoiceRecording, recorderState?.metering]);
 
   const applyPreset = (days) => {
     if (!days) {
@@ -422,6 +464,47 @@ export default function AdminUsersScreen() {
     aiUserSearchMutation.mutate(queryText);
   };
 
+  const startWebSilenceMonitor = (stream, onSilence) => {
+    if (typeof window === "undefined") return () => {};
+    const AudioContextApi = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextApi) return () => {};
+    const audioContext = new AudioContextApi();
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    const source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
+    const data = new Uint8Array(analyser.fftSize);
+    let lastSoundAt = Date.now();
+    let startedAt = Date.now();
+    const interval = setInterval(() => {
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 1) {
+        const value = (data[i] - 128) / 128;
+        sum += value * value;
+      }
+      const rms = Math.sqrt(sum / data.length);
+      const now = Date.now();
+      if (rms > 0.02) {
+        lastSoundAt = now;
+      }
+      const silentFor = now - lastSoundAt;
+      const recordedFor = now - startedAt;
+      if (recordedFor > 1200 && silentFor > 1200) {
+        onSilence?.();
+      }
+    }, 200);
+    return () => {
+      clearInterval(interval);
+      try {
+        source.disconnect();
+      } catch {}
+      try {
+        audioContext.close();
+      } catch {}
+    };
+  };
+
   const stopWebRecorder = async () => {
     const recorder = webMediaRecorderRef.current;
     if (!recorder) {
@@ -440,6 +523,10 @@ export default function AdminUsersScreen() {
             stream.getTracks().forEach((track) => track.stop());
           }
           webMediaStreamRef.current = null;
+          if (webSilenceCleanupRef.current) {
+            webSilenceCleanupRef.current();
+            webSilenceCleanupRef.current = null;
+          }
           resolve(audioBlob);
         } catch (error) {
           reject(error);
@@ -451,6 +538,10 @@ export default function AdminUsersScreen() {
         }
         webMediaStreamRef.current = null;
         webMediaRecorderRef.current = null;
+        if (webSilenceCleanupRef.current) {
+          webSilenceCleanupRef.current();
+          webSilenceCleanupRef.current = null;
+        }
         reject(new Error("Web recorder failed."));
       };
       try {
@@ -461,6 +552,10 @@ export default function AdminUsersScreen() {
         }
         webMediaStreamRef.current = null;
         webMediaRecorderRef.current = null;
+        if (webSilenceCleanupRef.current) {
+          webSilenceCleanupRef.current();
+          webSilenceCleanupRef.current = null;
+        }
         reject(error);
       }
     });
@@ -501,6 +596,24 @@ export default function AdminUsersScreen() {
       };
       recorder.start();
       webMediaRecorderRef.current = recorder;
+      if (webSilenceCleanupRef.current) {
+        webSilenceCleanupRef.current();
+      }
+      webSilenceCleanupRef.current = startWebSilenceMonitor(stream, async () => {
+        if (autoStopInFlightRef.current) return;
+        if (webMediaRecorderRef.current?.state !== "recording") return;
+        autoStopInFlightRef.current = true;
+        try {
+          const audioBlob = await stopWebRecorder();
+          setIsVoiceRecording(false);
+          sttVoiceSearchMutation.mutate(audioBlob);
+        } catch (error) {
+          setIsVoiceRecording(false);
+          showToast(error?.message || "Failed to stop web voice recording.", "error");
+        } finally {
+          autoStopInFlightRef.current = false;
+        }
+      });
     } catch (error) {
       if (stream?.getTracks) {
         stream.getTracks().forEach((track) => track.stop());
@@ -508,6 +621,24 @@ export default function AdminUsersScreen() {
       webMediaStreamRef.current = null;
       webMediaRecorderRef.current = null;
       throw error;
+    }
+  };
+
+  const stopNativeRecordingAndTranscribe = async () => {
+    try {
+      const recorded = await audioRecorder.stop();
+      setIsVoiceRecording(false);
+      const uri = String(recorded?.uri || "").trim();
+      if (!uri) {
+        showToast("No recording captured. Try again.", "warning");
+        return;
+      }
+      sttVoiceSearchMutation.mutate(uri);
+    } catch (error) {
+      setIsVoiceRecording(false);
+      showToast(error?.message || "Failed to stop recording.", "error");
+    } finally {
+      autoStopInFlightRef.current = false;
     }
   };
 
@@ -532,6 +663,7 @@ export default function AdminUsersScreen() {
       try {
         await startWebRecorder();
         setIsVoiceRecording(true);
+        autoStopInFlightRef.current = false;
         showToast("Listening... click mic again to stop.", "info");
       } catch (error) {
         setIsVoiceRecording(false);
@@ -540,19 +672,7 @@ export default function AdminUsersScreen() {
       return;
     }
     if (isVoiceRecording) {
-      try {
-        const recorded = await audioRecorder.stop();
-        setIsVoiceRecording(false);
-        const uri = String(recorded?.uri || "").trim();
-        if (!uri) {
-          showToast("No recording captured. Try again.", "warning");
-          return;
-        }
-        sttVoiceSearchMutation.mutate(uri);
-      } catch (error) {
-        setIsVoiceRecording(false);
-        showToast(error?.message || "Failed to stop recording.", "error");
-      }
+      await stopNativeRecordingAndTranscribe();
       return;
     }
 
@@ -560,6 +680,9 @@ export default function AdminUsersScreen() {
       await audioRecorder.prepareToRecordAsync();
       audioRecorder.record();
       setIsVoiceRecording(true);
+      silenceLastSoundAtRef.current = Date.now();
+      silenceStartedAtRef.current = Date.now();
+      autoStopInFlightRef.current = false;
       showToast("Listening... tap mic again to stop.", "info");
     } catch (error) {
       setIsVoiceRecording(false);
@@ -661,6 +784,36 @@ export default function AdminUsersScreen() {
       clearSelection();
     } catch (error) {
       showToast(error.message || "Bulk approval failed.", "error");
+    }
+  };
+
+  const bulkAiAccess = async (allowed = true) => {
+    if (selectedIds.size === 0) {
+      showToast("Select at least one user.", "warning");
+      return;
+    }
+    const ids = Array.from(selectedIds);
+    try {
+      const results = await Promise.allSettled(
+        ids.map((id) => aiAccessMutation.mutateAsync({ userId: id, allowed })),
+      );
+      const successCount = results.filter((r) => r.status === "fulfilled").length;
+      const failureCount = results.length - successCount;
+      if (successCount > 0) {
+        showToast(
+          allowed
+            ? `AI access granted for ${successCount} user(s).`
+            : `AI access removed for ${successCount} user(s).`,
+          failureCount > 0 ? "warning" : "success",
+        );
+      } else {
+        showToast("No users were updated.", "warning");
+      }
+      if (failureCount === 0) {
+        clearSelection();
+      }
+    } catch (error) {
+      showToast(error.message || "Bulk AI update failed.", "error");
     }
   };
 
@@ -1237,30 +1390,6 @@ export default function AdminUsersScreen() {
           <View
             style={{
               flex: 1,
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: theme.border,
-              backgroundColor: theme.surface,
-              overflow: "hidden",
-            }}
-          >
-            <Picker
-              selectedValue={pageSize}
-              onValueChange={(value) => {
-                setPageSize(value);
-                setPage(1);
-              }}
-              style={{ color: theme.text, height: 40 }}
-              dropdownIconColor={theme.text}
-            >
-              {[10, 20, 50, 100].map((size) => (
-                <Picker.Item key={size} label={`${size} per page`} value={size} />
-              ))}
-            </Picker>
-          </View>
-          <View
-            style={{
-              flex: 1,
               flexDirection: "row",
               alignItems: "center",
               justifyContent: "space-between",
@@ -1269,6 +1398,7 @@ export default function AdminUsersScreen() {
               borderWidth: 1,
               borderColor: theme.border,
               paddingHorizontal: 10,
+              height: 40,
             }}
           >
             <TouchableOpacity
@@ -1280,7 +1410,7 @@ export default function AdminUsersScreen() {
               </Text>
             </TouchableOpacity>
             <Text style={{ fontSize: 12, color: theme.textSecondary }}>
-              Page {page} / {totalPages}
+              Page {page} / {totalPages} • 20 per page
             </Text>
             <TouchableOpacity
               onPress={() => setPage((prev) => Math.min(totalPages, prev + 1))}
@@ -1579,6 +1709,38 @@ export default function AdminUsersScreen() {
               onPress={() => bulkApprove(true)}
             >
               <Text style={{ fontSize: 11, color: theme.primary }}>Approve</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{
+                paddingVertical: 6,
+                paddingHorizontal: 10,
+                borderRadius: 10,
+                backgroundColor: `${theme.primary}15`,
+                borderWidth: 1,
+                borderColor: `${theme.primary}40`,
+              }}
+              onPress={() => bulkAiAccess(true)}
+              disabled={aiAccessMutation.isPending}
+            >
+              <Text style={{ fontSize: 11, color: theme.primary }}>
+                {aiAccessMutation.isPending ? "Granting..." : "Grant AI"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{
+                paddingVertical: 6,
+                paddingHorizontal: 10,
+                borderRadius: 10,
+                backgroundColor: `${theme.error}15`,
+                borderWidth: 1,
+                borderColor: `${theme.error}40`,
+              }}
+              onPress={() => bulkAiAccess(false)}
+              disabled={aiAccessMutation.isPending}
+            >
+              <Text style={{ fontSize: 11, color: theme.error }}>
+                {aiAccessMutation.isPending ? "Removing..." : "Remove AI"}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={{
@@ -1988,9 +2150,18 @@ export default function AdminUsersScreen() {
                     <Square color={theme.textSecondary} size={16} />
                   )}
                 </TouchableOpacity>
-                <Text style={{ flex: 1, fontSize: 11, color: theme.text }}>
-                  {user.firstName} {user.lastName}
-                </Text>
+                <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <UserAvatar
+                    user={user}
+                    size={26}
+                    backgroundColor={theme.surface}
+                    borderColor={theme.border}
+                    textColor={theme.textSecondary}
+                  />
+                  <Text style={{ fontSize: 11, color: theme.text }}>
+                    {user.firstName} {user.lastName}
+                  </Text>
+                </View>
                 <View
                   style={{
                     width: 8,
@@ -1998,7 +2169,7 @@ export default function AdminUsersScreen() {
                     borderRadius: 4,
                     marginTop: 3,
                     marginRight: 6,
-                    backgroundColor: isUserOnline(user) ? "#22C55E" : theme.textSecondary,
+                    backgroundColor: isUserOnline(user) ? "#22C55E" : "transparent",
                   }}
                 />
                 <Text style={{ flex: 1, fontSize: 11, color: theme.textSecondary }}>

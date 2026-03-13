@@ -2,7 +2,7 @@ import { useAuth } from "@/utils/auth/useAuth";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useState } from "react";
-import { LogBox } from "react-native";
+import { LogBox, AppState } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ThemeProvider from "@/components/ThemeProvider";
@@ -84,6 +84,38 @@ export default function RootLayout() {
     }
   }, [auth?.token, pushApi]);
 
+  useEffect(() => {
+    if (!auth?.token) return;
+    let cancelled = false;
+    const syncBadge = async () => {
+      try {
+        const notifications = await queryClient.fetchQuery({
+          queryKey: ["notifications"],
+          queryFn: () => import("../utils/api").then((mod) => mod.default.getNotifications()),
+        });
+        if (cancelled) return;
+        const items = notifications?.items || notifications || [];
+        const unread = Array.isArray(items) ? items.filter((n) => !n.isRead).length : 0;
+        await pushApi?.syncBadgeCount?.(unread);
+      } catch {
+        // ignore badge sync failures
+      }
+    };
+
+    syncBadge();
+
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        syncBadge();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      subscription?.remove?.();
+    };
+  }, [auth?.token, pushApi]);
+
   if (!appReady) {
     return null;
   }
@@ -100,6 +132,7 @@ export default function RootLayout() {
               <Stack.Screen name="index" />
               <Stack.Screen name="(auth)" />
               <Stack.Screen name="(app)" />
+              <Stack.Screen name="payment-result" />
             </Stack>
           </GestureHandlerRootView>
         </ToastProvider>

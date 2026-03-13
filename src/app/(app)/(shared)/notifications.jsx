@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MotiView } from "moti";
-import { CheckCircle, Phone, PhoneOff, MessageCircle } from "lucide-react-native";
+import { CheckCircle, Phone, PhoneOff, MessageCircle, Calendar } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -49,7 +49,6 @@ export default function NotificationsScreen() {
     PHARMACY_ADMIN: "/(app)/(pharmacy)/chat",
     SUPER_ADMIN: "/(app)/(admin)/chat",
   };
-
   const buildVideoRoute = (route, data, autoAnswer = false) => {
     const params = new URLSearchParams();
     if (data?.sessionId) params.append("incomingSessionId", String(data.sessionId));
@@ -155,6 +154,82 @@ export default function NotificationsScreen() {
     router.push(`${route}?userId=${adminId}`);
   };
 
+  const handleReplyToMessage = (notification) => {
+    const data = parseNotificationData(notification) || {};
+    const senderId = String(
+      data.senderId || data.userId || data.fromId || data.sender_id || "",
+    ).trim();
+    if (!senderId) {
+      showToast("Sender information missing.", "warning");
+      return;
+    }
+    const route = roleChatRoute[role];
+    if (!route) {
+      showToast("Chat route unavailable for this role.", "warning");
+      return;
+    }
+    markRead(notification.id);
+    router.push(`${route}?userId=${senderId}`);
+  };
+
+  const handleMarkMessageRead = async (notification) => {
+    const data = parseNotificationData(notification) || {};
+    const senderId = String(
+      data.senderId || data.userId || data.fromId || data.sender_id || "",
+    ).trim();
+    try {
+      if (senderId) {
+        await apiClient.markChatRead(senderId);
+      }
+      markRead(notification.id);
+      showToast("Marked as read.", "success");
+    } catch (error) {
+      showToast(error.message || "Failed to mark as read.", "error");
+    }
+  };
+
+  const handleViewAppointment = (notification) => {
+    const data = parseNotificationData(notification) || {};
+    const appointmentId = String(
+      data.appointmentId || data.id || notification?.relatedId || "",
+    ).trim();
+    if (!appointmentId) {
+      showToast("Appointment reference missing.", "warning");
+      return;
+    }
+    markRead(notification.id);
+    router.push(`/(app)/(shared)/appointment-details/${appointmentId}`);
+  };
+
+  const handlePayPaymentRequest = async (notification) => {
+    const data = parseNotificationData(notification) || {};
+    const amount = Number(data.amount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast("Payment amount missing.", "warning");
+      return;
+    }
+    const recipientId = String(data.medicId || data.recipientId || "").trim();
+    if (!recipientId) {
+      showToast("Recipient missing for this payment request.", "warning");
+      return;
+    }
+    try {
+      await apiClient.createPayment({
+        amount,
+        currency: data.currency || "KES",
+        type: "SERVICE",
+        description: data.description || "Additional charges",
+        recipientId,
+        recipientRole: "MEDIC",
+        requestId: data.requestId || notification?.relatedId || null,
+      });
+      markRead(notification.id);
+      showToast("Payment initiated. Complete checkout.", "success");
+    } catch (error) {
+      showToast(error.message || "Failed to initiate payment.", "error");
+    }
+  };
+
   return (
     <ScreenLayout>
       <ScrollView
@@ -208,7 +283,14 @@ export default function NotificationsScreen() {
                 borderColor: theme.border,
                 marginBottom: 12,
               }}
-            >
+              >
+              {(() => {
+                const notificationType = String(notification.type || "").toUpperCase();
+                const isChatNotification = notificationType === "CHAT";
+                const isVideoCall = notificationType === "VIDEO_CALL";
+                const isAppointment = notificationType === "APPOINTMENT";
+                return (
+                  <>
               <Text
                 style={{
                   fontSize: 14,
@@ -239,7 +321,7 @@ export default function NotificationsScreen() {
                 <Text style={{ fontSize: 11, color: theme.textSecondary }}>
                   {notification.createdAt || ""}
                 </Text>
-                {!notification.isRead && (
+                {!notification.isRead && !isChatNotification && (
                   <TouchableOpacity
                     style={{
                       paddingHorizontal: 10,
@@ -264,11 +346,57 @@ export default function NotificationsScreen() {
                       }}
                     >
                       Mark read
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+              </View>
+              {isChatNotification && (
+                <View
+                  style={{
+                    marginTop: 10,
+                    flexDirection: "row",
+                    gap: 8,
+                  }}
+                >
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: theme.primary,
+                      gap: 6,
+                    }}
+                    onPress={() => handleReplyToMessage(notification)}
+                  >
+                    <MessageCircle color="#FFFFFF" size={14} />
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
+                      Reply
                     </Text>
                   </TouchableOpacity>
-                )}
-              </View>
-              {String(notification.type || "").toLowerCase() === "video_call" && (
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: theme.surface,
+                      borderWidth: 1,
+                      borderColor: theme.border,
+                      gap: 6,
+                    }}
+                    onPress={() => handleMarkMessageRead(notification)}
+                  >
+                    <CheckCircle color={theme.textSecondary} size={14} />
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: theme.textSecondary }}>
+                      Mark read
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {isVideoCall && (
                 <View
                   style={{
                     marginTop: 10,
@@ -290,7 +418,7 @@ export default function NotificationsScreen() {
                   >
                     <Phone color="#FFFFFF" size={14} />
                     <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
-                      Accept
+                      Receive
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -307,7 +435,61 @@ export default function NotificationsScreen() {
                   >
                     <PhoneOff color="#FFFFFF" size={14} />
                     <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
-                      Reject
+                      Decline
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {isAppointment && (
+                <View
+                  style={{
+                    marginTop: 10,
+                    flexDirection: "row",
+                    gap: 8,
+                  }}
+                >
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: theme.primary,
+                      gap: 6,
+                    }}
+                    onPress={() => handleViewAppointment(notification)}
+                  >
+                    <Calendar color="#FFFFFF" size={14} />
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
+                      View
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {String(notification.type || "").toUpperCase() === "PAYMENT_REQUEST" && (
+                <View
+                  style={{
+                    marginTop: 10,
+                    flexDirection: "row",
+                    gap: 8,
+                  }}
+                >
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: theme.primary,
+                      gap: 6,
+                    }}
+                    onPress={() => handlePayPaymentRequest(notification)}
+                  >
+                    <Calendar color="#FFFFFF" size={14} />
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
+                      Pay Now
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -391,6 +573,9 @@ export default function NotificationsScreen() {
                     </TouchableOpacity>
                   </View>
                 )}
+                  </>
+                );
+              })()}
             </MotiView>
           ))
         )}

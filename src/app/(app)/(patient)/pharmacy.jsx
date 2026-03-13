@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MotiView } from "moti";
@@ -29,9 +30,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
 import ScreenLayout from "@/components/ScreenLayout";
-import VideoCall from "@/components/VideoCall";
 import { useAppTheme } from "@/components/ThemeProvider";
-import { useVideoCall } from "@/utils/useVideoCall";
+import { useVideoCallContext as useVideoCall } from "@/utils/videoCallContext";
 import apiClient from "@/utils/api";
 import { useI18n } from "@/utils/i18n";
 import { useCartStore } from "@/utils/cart/store";
@@ -45,6 +45,8 @@ export default function PharmacyScreen() {
   const { theme, isDark } = useAppTheme();
   const { formatCurrency } = useI18n();
   const { showToast } = useToast();
+  const [showPharmacyPicker, setShowPharmacyPicker] = useState(false);
+  const [pharmacySearchQuery, setPharmacySearchQuery] = useState("");
   const prescriptionIdParam = Array.isArray(params?.prescriptionId)
     ? params.prescriptionId[0]
     : params?.prescriptionId;
@@ -173,6 +175,38 @@ export default function PharmacyScreen() {
     return matchesSearch && matchesCategory && matchesLocation && matchesPharmacy;
   });
 
+  const pharmacyOptions = useMemo(() => {
+    const map = new Map();
+    cartItems.forEach((item) => {
+      if (!item?.pharmacyId) return;
+      if (!map.has(item.pharmacyId)) {
+        map.set(item.pharmacyId, {
+          id: item.pharmacyId,
+          name: item.pharmacy || "Pharmacy",
+          rating: item.pharmacyRating || null,
+        });
+      }
+    });
+    filteredProducts.forEach((product) => {
+      if (!product?.pharmacyId) return;
+      if (!map.has(product.pharmacyId)) {
+        map.set(product.pharmacyId, {
+          id: product.pharmacyId,
+          name: product.pharmacy || "Pharmacy",
+          rating: product.pharmacyRating || null,
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [cartItems, filteredProducts]);
+  const filteredPharmacyOptions = useMemo(() => {
+    const query = String(pharmacySearchQuery || "").trim().toLowerCase();
+    if (!query) return pharmacyOptions;
+    return pharmacyOptions.filter((item) =>
+      String(item.name || "").toLowerCase().includes(query),
+    );
+  }, [pharmacyOptions, pharmacySearchQuery]);
+
   const trackMarketplaceEvent = (pharmacyId, type, payload = {}) => {
     if (!pharmacyId || !type) return;
     apiClient
@@ -228,9 +262,10 @@ export default function PharmacyScreen() {
   };
 
   // Handle pharmacy consultation call
-  const handlePharmacyConsultation = async (mode = "video") => {
+  const handlePharmacyConsultation = async (mode = "video", pharmacyIdOverride) => {
     try {
       const selectedPharmacyId =
+        pharmacyIdOverride ||
         cartItems[0]?.pharmacyId ||
         filteredProducts.find((product) => !!product.pharmacyId)?.pharmacyId ||
         "";
@@ -249,12 +284,27 @@ export default function PharmacyScreen() {
     }
   };
 
-  const promptPharmacyCallMode = () => {
+  const promptPharmacyCallMode = (pharmacy) => {
     Alert.alert("Start Call", "Choose call type", [
-      { text: "Audio", onPress: () => handlePharmacyConsultation("audio") },
-      { text: "Video", onPress: () => handlePharmacyConsultation("video") },
+      {
+        text: "Audio",
+        onPress: () => handlePharmacyConsultation("audio", pharmacy?.id),
+      },
+      {
+        text: "Video",
+        onPress: () => handlePharmacyConsultation("video", pharmacy?.id),
+      },
       { text: "Cancel", style: "cancel" },
     ]);
+  };
+
+  const openPharmacyPicker = () => {
+    if (!pharmacyOptions.length) {
+      showToast("No pharmacies available to call yet.", "warning");
+      return;
+    }
+    setPharmacySearchQuery("");
+    setShowPharmacyPicker(true);
   };
 
   const renderProductCard = ({ item, index }) => {
@@ -651,6 +701,136 @@ export default function PharmacyScreen() {
           paddingBottom: insets.bottom,
         }}
       >
+        <Modal
+          visible={showPharmacyPicker}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowPharmacyPicker(false)}
+        >
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.35)",
+              justifyContent: "center",
+              padding: 24,
+            }}
+          >
+            <View
+              style={{
+                backgroundColor: theme.card,
+                borderRadius: 16,
+                padding: 16,
+                borderWidth: 1,
+                borderColor: theme.border,
+                maxHeight: "80%",
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 16,
+                  fontFamily: "Inter_600SemiBold",
+                  color: theme.text,
+                  marginBottom: 12,
+                }}
+              >
+                Choose Pharmacy to Call
+              </Text>
+              <View
+                style={{
+                  backgroundColor: theme.surface,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  marginBottom: 12,
+                }}
+              >
+                <TextInput
+                  value={pharmacySearchQuery}
+                  onChangeText={setPharmacySearchQuery}
+                  placeholder="Search pharmacy..."
+                  placeholderTextColor={theme.textSecondary}
+                  style={{
+                    fontSize: 14,
+                    fontFamily: "Inter_400Regular",
+                    color: theme.text,
+                  }}
+                />
+              </View>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {filteredPharmacyOptions.length ? (
+                  filteredPharmacyOptions.map((pharmacy) => (
+                  <TouchableOpacity
+                    key={pharmacy.id}
+                    style={{
+                      paddingVertical: 12,
+                      borderBottomWidth: 1,
+                      borderBottomColor: theme.border,
+                    }}
+                    onPress={() => {
+                      setShowPharmacyPicker(false);
+                      promptPharmacyCallMode(pharmacy);
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 14,
+                        fontFamily: "Inter_600SemiBold",
+                        color: theme.text,
+                      }}
+                    >
+                      {pharmacy.name}
+                    </Text>
+                    {pharmacy.rating ? (
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontFamily: "Inter_400Regular",
+                          color: theme.textSecondary,
+                          marginTop: 2,
+                        }}
+                      >
+                        Rating: {Number(pharmacy.rating).toFixed(1)}
+                      </Text>
+                    ) : null}
+                  </TouchableOpacity>
+                  ))
+                ) : (
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontFamily: "Inter_400Regular",
+                      color: theme.textSecondary,
+                      paddingVertical: 12,
+                    }}
+                  >
+                    No pharmacies match your search.
+                  </Text>
+                )}
+              </ScrollView>
+              <TouchableOpacity
+                onPress={() => setShowPharmacyPicker(false)}
+                style={{
+                  marginTop: 12,
+                  alignSelf: "flex-end",
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontFamily: "Inter_600SemiBold",
+                    color: theme.primary,
+                  }}
+                >
+                  Close
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
         {/* Header */}
         <View
           style={{
@@ -694,7 +874,7 @@ export default function PharmacyScreen() {
               flexDirection: "row",
               alignItems: "center",
             }}
-            onPress={promptPharmacyCallMode}
+            onPress={openPharmacyPicker}
             activeOpacity={0.8}
           >
             <Phone color="#FFFFFF" size={16} />
@@ -1056,41 +1236,6 @@ export default function PharmacyScreen() {
           </View>
         )}
 
-        <VideoCall
-          isActive={Boolean(currentCall)}
-          incomingCall={incomingCall}
-          participantName={currentCall?.participantName}
-          participantRole={currentCall?.participantRole}
-          callMode={currentCall?.mode || "video"}
-          callStatus={callStatus}
-          callDuration={callDuration}
-          callType={currentCall?.type || "pharmacy"}
-          sessionId={currentCall?.sessionId}
-          remoteVideoUrl={currentCall?.remoteVideoUrl}
-          callSession={currentCall?.callSession}
-          onAcceptCall={() => {
-            if (incomingCall?.sessionId) {
-              answerCall(incomingCall.sessionId, {
-                participantName: incomingCall.participantName,
-                participantRole: incomingCall.participantRole,
-                participantId: incomingCall.participantId,
-                type: incomingCall.type,
-                mode: incomingCall.mode,
-              });
-            }
-          }}
-          onRejectCall={() => {
-            if (incomingCall?.sessionId) {
-              rejectCall(incomingCall.sessionId);
-            }
-          }}
-          onEndCall={() => endCall()}
-          onToggleVideo={toggleVideo}
-          onToggleAudio={toggleAudio}
-          onToggleCamera={toggleCamera}
-          onToggleHold={toggleHold}
-          onRemoteJoined={() => markCallConnected()}
-        />
       </View>
     </ScreenLayout>
   );

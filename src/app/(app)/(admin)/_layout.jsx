@@ -15,6 +15,8 @@ import {
   Mail,
   Sparkles,
   Briefcase,
+  Volume2,
+  Store,
 } from "lucide-react-native";
 import ResponsiveTabBar from "@/components/ResponsiveTabBar";
 import { useNotifications } from "@/utils/useNotifications";
@@ -32,11 +34,14 @@ export default function AdminTabLayout() {
   ];
 
   const moreLinks = [
+    { key: "online-users", title: "Online Users", href: "/(app)/(shared)/online-users", icon: Users },
     { key: "chat", title: "Chat", href: "/(app)/(shared)/conversations", icon: MessageCircle },
     { key: "jobs", title: "Jobs", href: "/(app)/(shared)/jobs", icon: Briefcase },
+    { key: "products", title: "Products", href: "/(app)/(admin)/products", icon: Store },
     { key: "email-center", title: "Email Center", href: "/(app)/(admin)/email-center", icon: Mail },
     { key: "video-call", title: "Video Call", href: "/(app)/(admin)/video-call", icon: Video },
     { key: "ai-features", title: "AI Features", href: "/(app)/(shared)/ai-finder", icon: Sparkles },
+    { key: "ai-settings", title: "AI Settings", href: "/(app)/(admin)/ai-settings", icon: Volume2 },
     { key: "control-center", title: "Control Center", href: "/(app)/(admin)/control-center", icon: ShieldAlert },
     { key: "settings", title: "Settings", href: "/(app)/(admin)/settings", icon: Settings },
     { key: "audit", title: "Audit Logs", href: "/(app)/(admin)/audit-logs", icon: FileText },
@@ -118,6 +123,8 @@ export default function AdminTabLayout() {
       <Tabs.Screen name="email-center" options={{ href: null }} />
       <Tabs.Screen name="video-call" options={{ href: null }} />
       <Tabs.Screen name="control-center" options={{ href: null }} />
+      <Tabs.Screen name="ai-settings" options={{ href: null }} />
+      <Tabs.Screen name="products" options={{ href: null }} />
     </Tabs>
   );
 }

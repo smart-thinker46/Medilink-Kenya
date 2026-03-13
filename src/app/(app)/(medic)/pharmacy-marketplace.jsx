@@ -11,14 +11,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowLeft,
-  Pill,
-  Plus,
-  Minus,
-  ShoppingCart,
-  CreditCard,
-} from "lucide-react-native";
+import { ArrowLeft, Pill, Plus, Minus, ShoppingCart, CreditCard } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -38,7 +31,7 @@ export default function MedicPharmacyMarketplaceScreen() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState([]);
-  const [paymentMethod, setPaymentMethod] = useState("intasend");
+  const paymentMethod = "intasend";
   const [phoneNumber, setPhoneNumber] = useState(auth?.user?.phone || "");
 
   const pharmacyIdParam = Array.isArray(params?.pharmacyId)
@@ -56,12 +49,6 @@ export default function MedicPharmacyMarketplaceScreen() {
         search: searchQuery || undefined,
       }),
   });
-  const methodsQuery = useQuery({
-    queryKey: ["payment-methods"],
-    queryFn: () => apiClient.getPaymentMethods(),
-  });
-
-  const methods = methodsQuery.data || [];
   const products = useMemo(() => {
     const raw = marketplaceQuery.data?.products || [];
     return raw.map((product) => ({
@@ -207,19 +194,17 @@ export default function MedicPharmacyMarketplaceScreen() {
           notes: "Medic order from pharmacy marketplace",
         });
 
-        if (paymentMethod) {
-          await apiClient.createPayment({
-            amount: pharmacyTotal,
-            currency: "KES",
-            method: paymentMethod,
-            type: "ORDER",
-            orderId: order?.id,
-            recipientId: pharmacyId,
-            recipientRole: "PHARMACY_ADMIN",
-            phone: phoneNumber || auth?.user?.phone,
-            description: "Medic medicine/equipment purchase",
-          });
-        }
+        await apiClient.createPayment({
+          amount: pharmacyTotal,
+          currency: "KES",
+          method: paymentMethod,
+          type: "ORDER",
+          orderId: order?.id,
+          recipientId: pharmacyId,
+          recipientRole: "PHARMACY_ADMIN",
+          phone: phoneNumber || auth?.user?.phone,
+          description: "Medic medicine/equipment purchase",
+        });
       }
 
       setCart([]);
@@ -436,34 +421,9 @@ export default function MedicPharmacyMarketplaceScreen() {
             </Text>
           </View>
 
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-            {methods.map((method) => (
-              <TouchableOpacity
-                key={method.id}
-                style={{
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor:
-                    paymentMethod === method.id ? theme.primary : theme.border,
-                  backgroundColor:
-                    paymentMethod === method.id ? `${theme.primary}20` : theme.surface,
-                }}
-                onPress={() => setPaymentMethod(method.id)}
-              >
-                <Text
-                  style={{
-                    color:
-                      paymentMethod === method.id ? theme.primary : theme.textSecondary,
-                    fontSize: 12,
-                  }}
-                >
-                  {method.name || method.id}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <Text style={{ color: theme.textSecondary, fontSize: 12, marginBottom: 8 }}>
+            Payments are processed via IntaSend.
+          </Text>
 
           <View
             style={{

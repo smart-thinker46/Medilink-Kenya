@@ -26,6 +26,7 @@ import { useChatSocket } from "@/utils/useChatSocket";
 import { enqueueMessage } from "@/utils/messageQueue";
 import { useI18n } from "@/utils/i18n";
 import { canContact, normalizeRole } from "@/utils/communicationRules";
+import UserAvatar from "@/components/UserAvatar";
 
 export default function ChatScreen() {
   const router = useRouter();
@@ -55,9 +56,10 @@ export default function ChatScreen() {
     queryFn: () => apiClient.getUserById(recipientId),
     enabled: Boolean(recipientId),
   });
-  const recipientName = recipientQuery.data?.fullName || recipientQuery.data?.email;
+  const recipient = recipientQuery.data || {};
+  const recipientName = recipient.fullName || recipient.email || "User";
   const senderRole = normalizeRole(auth?.user?.role);
-  const recipientRole = normalizeRole(recipientQuery.data?.role);
+  const recipientRole = normalizeRole(recipient?.role);
   const isChatAllowed = recipientRole ? canContact(senderRole, recipientRole) : true;
 
   const [message, setMessage] = useState("");
@@ -411,15 +413,31 @@ export default function ChatScreen() {
           >
             <ArrowLeft color={theme.text} size={20} />
           </TouchableOpacity>
-          <Text
-            style={{
-              fontSize: 20,
-              fontFamily: "Nunito_700Bold",
-              color: theme.text,
-            }}
-          >
-            Chat {recipientId ? `#${recipientId}` : ""}
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+            <UserAvatar
+              user={recipient}
+              size={40}
+              backgroundColor={theme.surface}
+              borderColor={theme.border}
+              textColor={theme.textSecondary}
+            />
+            <View style={{ marginLeft: 12, flex: 1 }}>
+              <Text
+                style={{
+                  fontSize: 18,
+                  fontFamily: "Nunito_700Bold",
+                  color: theme.text,
+                }}
+              >
+                {recipientName}
+              </Text>
+              {recipientRole ? (
+                <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                  {recipientRole.replace(/_/g, " ")}
+                </Text>
+              ) : null}
+            </View>
+          </View>
         </View>
 
         <View

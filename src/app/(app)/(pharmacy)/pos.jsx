@@ -42,7 +42,7 @@ export default function PharmacyPosScreen() {
 
   const [query, setQuery] = useState("");
   const [cart, setCart] = useState([]);
-  const [paymentMethod, setPaymentMethod] = useState("intasend");
+  const paymentMethod = "intasend";
   const [currency, setCurrency] = useState("KES");
   const [customerPhone, setCustomerPhone] = useState("");
   const [scannerVisible, setScannerVisible] = useState(false);
@@ -64,11 +64,6 @@ export default function PharmacyPosScreen() {
     queryFn: () => apiClient.getProducts(pharmacyId),
     enabled: Boolean(pharmacyId),
   });
-  const methodsQuery = useQuery({
-    queryKey: ["payment-methods"],
-    queryFn: () => apiClient.getPaymentMethods(),
-  });
-  const methods = methodsQuery.data || [];
   const ratesQuery = useQuery({
     queryKey: ["payment-rates"],
     queryFn: () => apiClient.getPaymentRates(),
@@ -223,19 +218,17 @@ export default function PharmacyPosScreen() {
         })),
         total,
       });
-      if (paymentMethod) {
-        await apiClient.createPayment({
-          amount: total,
-          currency,
-          method: paymentMethod,
-          type: "ORDER",
-          orderId: order?.id,
-          recipientId: auth?.user?.id,
-          recipientRole: "PHARMACY_ADMIN",
-          phone: customerPhone || auth?.user?.phone,
-          description: "Pharmacy order payment",
-        });
-      }
+      await apiClient.createPayment({
+        amount: total,
+        currency,
+        method: paymentMethod,
+        type: "ORDER",
+        orderId: order?.id,
+        recipientId: auth?.user?.id,
+        recipientRole: "PHARMACY_ADMIN",
+        phone: customerPhone || auth?.user?.phone,
+        description: "Pharmacy order payment",
+      });
       queryClient.invalidateQueries({ queryKey: ["pharmacy-products", pharmacyId] });
       queryClient.invalidateQueries({ queryKey: ["pharmacy-products", pharmacyId, "pos"] });
       queryClient.invalidateQueries({ queryKey: ["pharmacy-stock-movements", pharmacyId] });
@@ -374,36 +367,8 @@ export default function PharmacyPosScreen() {
 
         <View style={{ paddingHorizontal: 24, marginBottom: 16 }}>
           <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 8 }}>
-            Payment Method
+            Payments are processed via IntaSend.
           </Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {methods.map((method) => (
-              <TouchableOpacity
-                key={method.id}
-                style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderRadius: 14,
-                  backgroundColor:
-                    paymentMethod === method.id ? `${theme.primary}20` : theme.surface,
-                  borderWidth: 1,
-                  borderColor:
-                    paymentMethod === method.id ? theme.primary : theme.border,
-                }}
-                onPress={() => setPaymentMethod(method.id)}
-              >
-                <Text
-                  style={{
-                    fontSize: 12,
-                    fontFamily: "Inter_600SemiBold",
-                    color: paymentMethod === method.id ? theme.primary : theme.textSecondary,
-                  }}
-                >
-                  {method.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
           <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
             {["KES", "USD"].map((code) => (
               <TouchableOpacity

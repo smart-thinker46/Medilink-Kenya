@@ -18,6 +18,8 @@ import {
   CalendarDays,
   Coins,
   BriefcaseMedical,
+  MessageCircle,
+  Lock,
 } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
@@ -47,6 +49,10 @@ export default function MedicProfileViewScreen() {
     queryFn: () => apiClient.getMedicById(medicId),
     enabled: Boolean(medicId),
   });
+  const appointmentsQuery = useQuery({
+    queryKey: ["appointments", "patient-chat-access", medicId],
+    queryFn: () => apiClient.getAppointments(),
+  });
 
   const medic = medicQuery.data;
   const workingDays = useMemo(() => {
@@ -63,6 +69,18 @@ export default function MedicProfileViewScreen() {
     medic?.consultationPrice ?? medic?.consultationFee ?? 0,
   );
   const licenseUrl = resolveAbsoluteUrl(medic?.licenseUrl);
+  const bookedMedicIds = useMemo(() => {
+    const items = appointmentsQuery.data?.items || appointmentsQuery.data || [];
+    const ids = new Set();
+    items.forEach((appt) => {
+      const status = String(appt?.status || "").toLowerCase();
+      if (status === "cancelled" || status === "canceled") return;
+      const id = appt?.medicId || appt?.medic_id;
+      if (id) ids.add(String(id));
+    });
+    return ids;
+  }, [appointmentsQuery.data]);
+  const canChat = medicId && bookedMedicIds.has(String(medicId));
 
   return (
     <ScreenLayout>
@@ -318,6 +336,47 @@ export default function MedicProfileViewScreen() {
                 This profile is shared for patient view to support medic discovery.
               </Text>
             </View>
+
+            <TouchableOpacity
+              style={{
+                marginTop: 14,
+                backgroundColor: theme.surface,
+                borderRadius: 12,
+                paddingVertical: 12,
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+                borderWidth: canChat ? 0 : 1,
+                borderColor: canChat ? "transparent" : theme.border,
+                opacity: canChat ? 1 : 0.6,
+              }}
+              onPress={() => {
+                if (!canChat) {
+                  Alert.alert(
+                    "Chat Locked",
+                    "Book an appointment with this medic to unlock chat.",
+                  );
+                  return;
+                }
+                router.push(`/(app)/(patient)/chat?medicId=${medicId}`);
+              }}
+            >
+              {canChat ? (
+                <MessageCircle color={theme.textSecondary} size={16} />
+              ) : (
+                <Lock color={theme.textSecondary} size={16} />
+              )}
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontFamily: "Inter_600SemiBold",
+                  color: theme.textSecondary,
+                  marginLeft: 8,
+                }}
+              >
+                {canChat ? "Chat" : "Chat Locked"}
+              </Text>
+            </TouchableOpacity>
           </ScrollView>
         )}
       </View>

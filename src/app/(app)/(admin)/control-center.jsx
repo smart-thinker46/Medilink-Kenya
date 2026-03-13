@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   LifeBuoy,
   Server,
+  Wifi,
   FileText,
   Bell,
   Flag,
@@ -124,6 +125,10 @@ export default function AdminControlCenterScreen() {
     queryFn: () => apiClient.adminGetAiVoiceConfig(),
   });
   const [selectedAiVoiceModel, setSelectedAiVoiceModel] = useState("");
+  const streamStatusQuery = useQuery({
+    queryKey: ["admin-stream-status"],
+    queryFn: () => apiClient.adminGetStreamStatus(),
+  });
 
   const updateAiVoiceMutation = useMutation({
     mutationFn: (model) => apiClient.adminUpdateAiVoiceConfig(model),
@@ -290,6 +295,8 @@ export default function AdminControlCenterScreen() {
   const aiVoiceConfig = aiVoiceConfigQuery.data || {};
   const aiVoiceOptions = Array.isArray(aiVoiceConfig?.options) ? aiVoiceConfig.options : [];
   const aiVoiceAppliedModel = String(aiVoiceConfig?.selectedModel || "");
+  const streamStatus = streamStatusQuery.data || {};
+  const streamHealth = streamStatus?.health || null;
   const booleanFeatureFlags = useMemo(
     () =>
       Object.fromEntries(
@@ -526,6 +533,49 @@ export default function AdminControlCenterScreen() {
               </Text>
             );
           })}
+        </Card>
+
+        <Card
+          title="Stream Video Status"
+          icon={Wifi}
+          theme={theme}
+          right={
+            <TouchableOpacity onPress={() => streamStatusQuery.refetch()}>
+              <Text style={{ color: theme.primary, fontSize: 11, fontFamily: "Inter_600SemiBold" }}>
+                Refresh
+              </Text>
+            </TouchableOpacity>
+          }
+        >
+          {streamStatusQuery.isLoading ? (
+            <ActivityIndicator size="small" color={theme.primary} />
+          ) : streamStatusQuery.isError ? (
+            <Text style={{ color: theme.error, fontSize: 12 }}>
+              Unable to load Stream status. Check API connectivity.
+            </Text>
+          ) : (
+            <>
+              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+                Configured: {streamStatus?.configured ? "Yes" : "No"}
+              </Text>
+              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+                API Key: {streamStatus?.apiKeyPreview || "Not set"}
+              </Text>
+              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+                Secret: {streamStatus?.secretPresent ? "Present" : "Missing"}
+              </Text>
+              {streamStatus?.error ? (
+                <Text style={{ color: theme.error, fontSize: 12, marginTop: 6 }}>
+                  Error: {streamStatus.error}
+                </Text>
+              ) : null}
+              {streamHealth ? (
+                <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 6 }}>
+                  Health: {streamHealth?.status || "OK"}
+                </Text>
+              ) : null}
+            </>
+          )}
         </Card>
 
         <Card title="Content & Policy Control" icon={FileText} theme={theme}>

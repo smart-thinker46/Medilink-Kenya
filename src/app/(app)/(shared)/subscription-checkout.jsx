@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { View, Text, TouchableOpacity, ScrollView, TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, CreditCard } from "lucide-react-native";
+import { ArrowLeft } from "lucide-react-native";
 import { useQuery, useMutation } from "@tanstack/react-query";
 
 import ScreenLayout from "@/components/ScreenLayout";
@@ -17,11 +17,7 @@ const DEFAULT_PRICING = {
   MEDIC: { monthly: 300, yearly: 4800 },
   PHARMACY_ADMIN: { monthly: 500, yearly: 10000 },
   HOSPITAL_ADMIN: { monthly: 1000, yearly: 12000 },
-  PATIENT: { monthly: 0, yearly: 0 },
-};
-
-const METHOD_ICONS = {
-  intasend: CreditCard,
+  PATIENT: { monthly: 100, yearly: 1200 },
 };
 
 export default function SubscriptionCheckoutScreen() {
@@ -45,19 +41,11 @@ export default function SubscriptionCheckoutScreen() {
   const pricingMap = pricingQuery.data || DEFAULT_PRICING;
   const pricing = pricingMap?.[role];
   const [plan, setPlan] = useState("monthly");
-  const [selectedMethod, setSelectedMethod] = useState(null);
   const [currency, setCurrency] = useState("KES");
 
-  const methodsQuery = useQuery({
-    queryKey: ["payment-methods"],
-    queryFn: () => apiClient.getPaymentMethods(),
-  });
-  const methods = methodsQuery.data || [];
-  useEffect(() => {
-    if (!selectedMethod && methods.length > 0) {
-      setSelectedMethod(methods[0]?.id || "intasend");
-    }
-  }, [methods, selectedMethod]);
+  const selectedMethod = "intasend";
+  const subscriptionDescription =
+    role === "PATIENT" ? "AI Subscription" : "Subscription";
 
   const amountKes = useMemo(() => {
     if (!pricing) return 0;
@@ -73,12 +61,12 @@ export default function SubscriptionCheckoutScreen() {
 
   const paymentMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedMethod) throw new Error("Select a payment method");
       const payment = await apiClient.createPayment({
         amount,
         currency,
         method: selectedMethod,
         type: "SUBSCRIPTION",
+        description: subscriptionDescription,
         plan,
         phone: auth?.user?.phone,
       });
@@ -245,54 +233,9 @@ export default function SubscriptionCheckoutScreen() {
               ))}
             </View>
 
-            <Text
-              style={{
-                fontSize: 14,
-                fontFamily: "Inter_600SemiBold",
-                color: theme.text,
-                marginBottom: 10,
-              }}
-            >
-              Select Payment Method
+            <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 10 }}>
+              Payments are processed via IntaSend.
             </Text>
-
-            {methods.map((method) => {
-              const Icon = METHOD_ICONS[method.id] || CreditCard;
-              return (
-                <TouchableOpacity
-                  key={method.id}
-                  style={{
-                    backgroundColor: theme.card,
-                    borderRadius: 14,
-                    padding: 14,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    marginBottom: 10,
-                    borderWidth: selectedMethod === method.id ? 2 : 1,
-                    borderColor:
-                      selectedMethod === method.id ? theme.primary : theme.border,
-                  }}
-                  onPress={() => setSelectedMethod(method.id)}
-                >
-                  <View
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 20,
-                      backgroundColor: theme.surface,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      marginRight: 12,
-                    }}
-                  >
-                    <Icon color={theme.iconColor} size={18} />
-                  </View>
-                  <Text style={{ fontSize: 14, fontFamily: "Inter_500Medium", color: theme.text }}>
-                    {method.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
 
             <TouchableOpacity
               style={{

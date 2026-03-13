@@ -239,6 +239,9 @@ class ApiClient {
       delete mergedHeaders["content-type"];
       if (Platform.OS === "web") {
         delete mergedHeaders["Content-Type"];
+        // Override axios default JSON header for this request
+        mergedHeaders["Content-Type"] = undefined;
+        mergedHeaders["content-type"] = undefined;
       } else {
         mergedHeaders["Content-Type"] = "multipart/form-data";
       }
@@ -346,6 +349,10 @@ class ApiClient {
 
   async getMapDiscovery(params = {}) {
     return this.client.get("/users/map-discovery", { params });
+  }
+
+  async getPatientsDirectory(params = {}) {
+    return this.client.get("/users/patients-directory", { params });
   }
 
   async getPatientDashboard(params = {}) {
@@ -670,6 +677,10 @@ class ApiClient {
     return payment;
   }
 
+  async createPaymentRequest(data) {
+    return this.client.post("/payments/requests", data);
+  }
+
   async getPaymentMethods() {
     return this.client.get("/payments/methods");
   }
@@ -680,6 +691,16 @@ class ApiClient {
 
   async getPaymentHistory(params = {}) {
     return this.client.get("/payments/history", { params });
+  }
+
+  async getPaymentDetails(params = {}) {
+    const apiRef = params?.apiRef || params?.paymentId || "";
+    if (!apiRef) {
+      throw new Error("Payment reference is required.");
+    }
+    return this.client.get("/payments/lookup", {
+      params: { apiRef },
+    });
   }
 
   async getWallet(ownerId) {
@@ -783,6 +804,10 @@ class ApiClient {
     return this.client.get("/admin/subscriptions");
   }
 
+  async adminGetProducts(params = {}) {
+    return this.client.get("/admin/products", { params });
+  }
+
   async adminUpdateSubscription(id, status) {
     return this.client.put(`/admin/subscriptions/${id}/status`, { status });
   }
@@ -823,8 +848,8 @@ class ApiClient {
     return this.client.get("/admin/hiring");
   }
 
-  async adminGetOperations() {
-    return this.client.get("/admin/operations");
+  async adminGetOperations(params = {}) {
+    return this.client.get("/admin/operations", { params });
   }
 
   async adminGetActivityReport() {
@@ -857,6 +882,23 @@ class ApiClient {
 
   async adminReviewKyc(userId, payload = {}) {
     return this.client.put(`/admin/kyc-queue/${userId}`, payload);
+  }
+
+  // Hospital services
+  async getHospitalServices(params = {}) {
+    return this.client.get("/hospital-services", { params });
+  }
+
+  async createHospitalService(payload) {
+    return this.client.post("/hospital-services", payload);
+  }
+
+  async updateHospitalService(id, payload) {
+    return this.client.put(`/hospital-services/${id}`, payload);
+  }
+
+  async deleteHospitalService(id) {
+    return this.client.delete(`/hospital-services/${id}`);
   }
 
   async adminGetRevenueIntelligence() {
@@ -947,14 +989,6 @@ class ApiClient {
     return this.client.put("/admin/feature-flags", { flags });
   }
 
-  async adminGetAiVoiceConfig() {
-    return this.client.get("/admin/ai-voice/config");
-  }
-
-  async adminUpdateAiVoiceConfig(model) {
-    return this.client.put("/admin/ai-voice/config", { model });
-  }
-
   async adminGetDisputes() {
     return this.client.get("/admin/disputes");
   }
@@ -969,6 +1003,10 @@ class ApiClient {
 
   async adminCreateRefund(payload = {}) {
     return this.client.post("/admin/refunds", payload);
+  }
+
+  async adminGetStreamStatus() {
+    return this.client.get("/video-calls/stream-status");
   }
 
   // Complaints
@@ -1151,6 +1189,30 @@ class ApiClient {
       body: formData,
       headers,
     });
+  }
+
+  async adminGetAiVoiceConfig() {
+    return this.client.get("/admin/ai-voice/config");
+  }
+
+  async adminUpdateAiVoiceConfig(payload = {}) {
+    const body =
+      typeof payload === "string"
+        ? { model: payload }
+        : payload && typeof payload === "object"
+          ? payload
+          : {};
+    return this.client.put("/admin/ai-voice/config", body);
+  }
+
+  async getOnlineUsers(params = {}) {
+    const query = new URLSearchParams();
+    const roles =
+      Array.isArray(params.roles) ? params.roles.join(",") : params.roles;
+    if (roles) query.set("roles", String(roles));
+    if (params.search) query.set("search", String(params.search));
+    const suffix = query.toString();
+    return this.client.get(`/users/online${suffix ? `?${suffix}` : ""}`);
   }
 
   async uploadFile(file) {

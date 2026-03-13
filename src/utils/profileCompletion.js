@@ -91,17 +91,6 @@ export const profileCompletionFields = [
       Boolean(profile?.avatarUrl) ||
       Boolean(profile?.photoUrl),
   },
-  {
-    key: "idFront",
-    label: "ID front",
-    isComplete: (profile) =>
-      Boolean(profile?.idFront) || Boolean(profile?.idFrontUrl),
-  },
-  {
-    key: "idBack",
-    label: "ID back",
-    isComplete: (profile) => Boolean(profile?.idBack) || Boolean(profile?.idBackUrl),
-  },
 ];
 
 export const getProfileCompletion = (profile) => {

@@ -7,6 +7,7 @@ import {
   TextInput,
   Platform,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { MotiView } from "moti";
@@ -26,6 +27,7 @@ import {
   getLocationAddressLabel,
   normalizeLocation,
 } from "@/utils/locationHelpers";
+import UserAvatar from "@/components/UserAvatar";
 
 export default function BookAppointmentScreen() {
   const router = useRouter();
@@ -34,6 +36,9 @@ export default function BookAppointmentScreen() {
   const { showToast } = useToast();
   const params = useLocalSearchParams();
   const initialMedicId = params?.medicId;
+  const appointmentId = params?.appointmentId || params?.appointment_id;
+  const isReschedule =
+    String(params?.reschedule || "").toLowerCase() === "1" || Boolean(appointmentId);
 
   const { profile } = usePatientProfile();
   const completion = useMemo(() => getProfileCompletion(profile), [profile]);
@@ -49,6 +54,7 @@ export default function BookAppointmentScreen() {
   const [time, setTime] = useState("");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [showSelectedDetails, setShowSelectedDetails] = useState(true);
 
   const medicsQuery = useQuery({
     queryKey: ["medics", "all"],
@@ -85,8 +91,22 @@ export default function BookAppointmentScreen() {
           ...medic,
           id,
           name,
+          avatarUrl: medic.avatarUrl || medic.profilePhoto || medic.profilePhotoUrl || "",
           specialization,
           location,
+          experienceYears: medic.experienceYears ?? medic.experience ?? null,
+          consultationFee: medic.consultationFee ?? medic.fee ?? null,
+          email: medic.email || "",
+          phone: medic.phone || "",
+          rating: medic.rating ?? medic.averageRating ?? null,
+          availability: medic.availability || medic.availableSlots || medic.nextAvailable || "",
+          languages: Array.isArray(medic.languages)
+            ? medic.languages
+            : Array.isArray(medic.spokenLanguages)
+              ? medic.spokenLanguages
+              : typeof medic.languages === "string"
+                ? medic.languages.split(",").map((item) => item.trim()).filter(Boolean)
+                : [],
           searchable,
         };
       }),
@@ -95,6 +115,10 @@ export default function BookAppointmentScreen() {
   const selectedMedic = useMemo(
     () => medicsWithMeta.find((medic) => medic.id === medicId) || null,
     [medicId, medicsWithMeta],
+  );
+  const consultationFee = useMemo(
+    () => Number(selectedMedic?.consultationFee || 0),
+    [selectedMedic],
   );
   const filteredMedicSuggestions = useMemo(() => {
     const query = String(medicSearch || "").trim().toLowerCase();
@@ -132,6 +156,43 @@ export default function BookAppointmentScreen() {
     },
   });
 
+  const rescheduleMutation = useMutation({
+    mutationFn: (payload) => apiClient.updateAppointment(payload.id, payload.data),
+    onSuccess: () => {
+      showToast("Appointment rescheduled.", "success");
+      router.push("/(app)/(patient)/appointments");
+    },
+    onError: (error) => {
+      showToast(error.message || "Reschedule failed.", "error");
+    },
+  });
+
+  const appointmentQuery = useQuery({
+    queryKey: ["appointment", appointmentId],
+    queryFn: async () => {
+      const list = await apiClient.getAppointments();
+      const items = list?.items || list || [];
+      return items.find((item) => String(item.id) === String(appointmentId)) || null;
+    },
+    enabled: Boolean(appointmentId),
+  });
+
+  useEffect(() => {
+    if (!appointmentQuery.data) return;
+    const appt = appointmentQuery.data;
+    const nextMedicId = appt?.medicId || appt?.medic_id;
+    if (nextMedicId) {
+      setMedicId(nextMedicId);
+      const medic = medicsWithMeta.find((item) => String(item.id) === String(nextMedicId));
+      if (medic) setMedicSearch(medic.name);
+    }
+    if (appt?.date) setDate(String(appt.date));
+    if (appt?.time) setTime(String(appt.time));
+    if (appt?.mode) setMode(String(appt.mode));
+    if (appt?.reason) setReason(String(appt.reason));
+    if (appt?.treatmentLocation) setTreatmentLocation(String(appt.treatmentLocation));
+  }, [appointmentQuery.data, medicsWithMeta]);
+
   const formatDate = (value) => {
     const year = value.getFullYear();
     const month = String(value.getMonth() + 1).padStart(2, "0");
@@ -159,14 +220,69 @@ export default function BookAppointmentScreen() {
       return;
     }
 
-    appointmentMutation.mutate({
+    if (isReschedule && appointmentId) {
+      rescheduleMutation.mutate({
+        id: appointmentId,
+        data: {
+          status: "rescheduled",
+          medic_id: medicId,
+          date,
+          time,
+          mode,
+          reason,
+          rescheduleReason: reason,
+          treatmentLocation: treatmentLocation.trim() || undefined,
+        },
+      });
+      return;
+    }
+
+    const payload = {
       medic_id: medicId,
       date,
       time,
       mode,
       reason,
       treatmentLocation: treatmentLocation.trim() || undefined,
-    });
+    };
+
+    const fee = Number(selectedMedic?.consultationFee || 0);
+    if (fee > 0) {
+      (async () => {
+        try {
+          const payment = await apiClient.createPayment({
+            amount: fee,
+            currency: "KES",
+            type: "APPOINTMENT",
+            description: "Appointment Booking",
+            recipientId: medicId,
+            recipientRole: "MEDIC",
+            phone: profile?.phone,
+          });
+          const paymentId = payment?.id || payment?.apiRef;
+          if (!paymentId) {
+            showToast("Payment reference missing.", "error");
+            return;
+          }
+          const status = String(payment?.status || "").toUpperCase();
+          if (status === "PAID") {
+            appointmentMutation.mutate({ ...payload, paymentId });
+            return;
+          }
+          await AsyncStorage.setItem(
+            `pending-appointment:${paymentId}`,
+            JSON.stringify({ ...payload, paymentId }),
+          );
+          showToast("Complete payment to finish booking.", "success");
+          router.push(`/payment-result?api_ref=${paymentId}`);
+        } catch (error) {
+          showToast(error.message || "Payment initiation failed.", "error");
+        }
+      })();
+      return;
+    }
+
+    appointmentMutation.mutate(payload);
   };
 
   const handleUseCurrentLocation = () => {
@@ -224,7 +340,7 @@ export default function BookAppointmentScreen() {
               color: theme.text,
             }}
           >
-            Book Appointment
+            {isReschedule ? "Reschedule Appointment" : "Book Appointment"}
           </Text>
         </View>
 
@@ -329,29 +445,40 @@ export default function BookAppointmentScreen() {
                               : theme.backgroundSecondary || theme.surface,
                           paddingHorizontal: 12,
                           paddingVertical: 10,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 10,
                         }}
                       >
-                        <Text
-                          style={{
-                            fontSize: 14,
-                            fontFamily: "Inter_600SemiBold",
-                            color: theme.text,
-                          }}
-                        >
-                          {medic.name}
-                        </Text>
-                        <Text
-                          style={{
-                            marginTop: 2,
-                            fontSize: 12,
-                            fontFamily: "Inter_400Regular",
-                            color: theme.textSecondary,
-                          }}
-                        >
-                          {[medic.specialization, medic.location]
-                            .filter(Boolean)
-                            .join(" • ") || "No extra details"}
-                        </Text>
+                        <UserAvatar
+                          uri={medic.avatarUrl}
+                          name={medic.name}
+                          size={36}
+                          backgroundColor={theme.surface}
+                        />
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={{
+                              fontSize: 14,
+                              fontFamily: "Inter_600SemiBold",
+                              color: theme.text,
+                            }}
+                          >
+                            {medic.name}
+                          </Text>
+                          <Text
+                            style={{
+                              marginTop: 2,
+                              fontSize: 12,
+                              fontFamily: "Inter_400Regular",
+                              color: theme.textSecondary,
+                            }}
+                          >
+                            {[medic.specialization, medic.location]
+                              .filter(Boolean)
+                              .join(" • ") || "No extra details"}
+                          </Text>
+                        </View>
                       </TouchableOpacity>
                     ))
                   ) : (
@@ -369,17 +496,99 @@ export default function BookAppointmentScreen() {
               )}
             </View>
             {selectedMedic ? (
-              <Text
+              <View
                 style={{
-                  marginTop: -8,
+                  marginTop: -6,
                   marginBottom: 12,
-                  fontSize: 12,
-                  fontFamily: "Inter_500Medium",
-                  color: theme.primary,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  backgroundColor: theme.surface,
+                  padding: 12,
                 }}
               >
-                Selected: {selectedMedic.name}
-              </Text>
+                <TouchableOpacity
+                  onPress={() => setShowSelectedDetails((prev) => !prev)}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 10,
+                  }}
+                >
+                  <UserAvatar
+                    uri={selectedMedic.avatarUrl}
+                    name={selectedMedic.name}
+                    size={46}
+                    backgroundColor={theme.backgroundSecondary || theme.surface}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontFamily: "Inter_600SemiBold",
+                        color: theme.primary,
+                      }}
+                    >
+                      Selected: {selectedMedic.name}
+                    </Text>
+                    <Text
+                      style={{
+                        marginTop: 2,
+                        fontSize: 12,
+                        fontFamily: "Inter_400Regular",
+                        color: theme.textSecondary,
+                      }}
+                    >
+                      {[selectedMedic.specialization, selectedMedic.location]
+                        .filter(Boolean)
+                        .join(" • ") || "No extra details"}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                    {showSelectedDetails ? "Hide" : "Show"}
+                  </Text>
+                </TouchableOpacity>
+
+                {showSelectedDetails && (
+                  <View style={{ marginTop: 10, gap: 6 }}>
+                    {selectedMedic.experienceYears != null ? (
+                      <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                        Experience: {Number(selectedMedic.experienceYears) || 0} yrs
+                      </Text>
+                    ) : null}
+                    {selectedMedic.consultationFee != null ? (
+                      <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                        Consultation Fee: KES {Number(selectedMedic.consultationFee).toLocaleString()}
+                      </Text>
+                    ) : null}
+                    {selectedMedic.rating != null ? (
+                      <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                        Rating: {Number(selectedMedic.rating).toFixed(1)} / 5
+                      </Text>
+                    ) : null}
+                    {selectedMedic.availability ? (
+                      <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                        Availability: {String(selectedMedic.availability)}
+                      </Text>
+                    ) : null}
+                    {selectedMedic.languages?.length ? (
+                      <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                        Languages: {selectedMedic.languages.join(", ")}
+                      </Text>
+                    ) : null}
+                    {selectedMedic.email ? (
+                      <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                        Email: {selectedMedic.email}
+                      </Text>
+                    ) : null}
+                    {selectedMedic.phone ? (
+                      <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                        Phone: {selectedMedic.phone}
+                      </Text>
+                    ) : null}
+                  </View>
+                )}
+              </View>
             ) : null}
 
             <Text
@@ -654,12 +863,16 @@ export default function BookAppointmentScreen() {
                 marginBottom: 8,
               }}
             >
-              Reason
+              {isReschedule ? "Reschedule Reason" : "Reason"}
             </Text>
             <TextInput
               value={reason}
               onChangeText={setReason}
-              placeholder="Describe your symptoms or reason"
+              placeholder={
+                isReschedule
+                  ? "Why do you need to reschedule?"
+                  : "Describe your symptoms or reason"
+              }
               placeholderTextColor={theme.textSecondary}
               style={{
                 minHeight: 90,
@@ -677,10 +890,65 @@ export default function BookAppointmentScreen() {
               multiline
             />
 
+            <Text
+              style={{
+                fontSize: 14,
+                fontFamily: "Inter_500Medium",
+                color: theme.text,
+                marginBottom: 8,
+              }}
+            >
+              Consultation Fee
+            </Text>
+            <View
+              style={{
+                height: 52,
+                backgroundColor: theme.surface,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: theme.border,
+                paddingHorizontal: 16,
+                justifyContent: "center",
+                marginBottom: 8,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 16,
+                  fontFamily: "Inter_500Medium",
+                  color: theme.text,
+                }}
+              >
+                {consultationFee > 0
+                  ? `KES ${consultationFee.toLocaleString()}`
+                  : "No fee listed"}
+              </Text>
+            </View>
+            {consultationFee > 0 ? (
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontFamily: "Inter_400Regular",
+                  color: theme.textSecondary,
+                  marginBottom: 20,
+                }}
+              >
+                Payment is required to complete the booking. Checkout opens via IntaSend.
+              </Text>
+            ) : (
+              <View style={{ height: 12 }} />
+            )}
+
             <Button
-              title="Confirm Appointment"
+              title={
+                isReschedule
+                  ? "Reschedule Appointment"
+                  : consultationFee > 0
+                    ? "Pay & Book Appointment"
+                    : "Confirm Appointment"
+              }
               onPress={handleSubmit}
-              loading={appointmentMutation.isLoading}
+              loading={appointmentMutation.isLoading || rescheduleMutation.isLoading}
               disabled={!isProfileComplete}
             />
           </MotiView>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Platform } from "react-native";
 import { useMutation } from "@tanstack/react-query";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
@@ -15,14 +16,17 @@ const BASE64_ENCODING = FileSystem?.EncodingType?.Base64 || "base64";
 
 export default function useAiSpeechPlayer({
   preferDeviceSpeech = true,
+  defaultLanguage = "en",
   onWarn,
   onError,
   onSuccess,
 } = {}) {
   const soundRef = useRef(null);
   const tempAudioPathRef = useRef("");
+  const tempAudioUrlRef = useRef("");
   const [isPlaying, setIsPlaying] = useState(false);
   const [lastAudioUrl, setLastAudioUrl] = useState("");
+  const isWeb = Platform.OS === "web";
 
   const cleanupSound = useCallback(async () => {
     try {
@@ -41,10 +45,19 @@ export default function useAiSpeechPlayer({
     const tempPath = String(tempAudioPathRef.current || "");
     if (tempPath) {
       tempAudioPathRef.current = "";
-      await FileSystem.deleteAsync(tempPath, { idempotent: true }).catch(() => undefined);
+      if (!isWeb) {
+        await FileSystem.deleteAsync(tempPath, { idempotent: true }).catch(() => undefined);
+      }
+    }
+    const tempUrl = String(tempAudioUrlRef.current || "");
+    if (tempUrl) {
+      tempAudioUrlRef.current = "";
+      if (isWeb && typeof URL !== "undefined") {
+        URL.revokeObjectURL(tempUrl);
+      }
     }
     setIsPlaying(false);
-  }, []);
+  }, [isWeb]);
 
   useEffect(() => {
     return () => {
@@ -73,16 +86,32 @@ export default function useAiSpeechPlayer({
       let playbackUri = "";
 
       if (base64Audio) {
-        const tempFile = `${FileSystem.cacheDirectory || ""}medilink-ai-tts-${Date.now()}.wav`;
-        if (!tempFile) {
-          onError?.("Unable to prepare local audio cache for playback.");
-          return;
+        if (isWeb) {
+          try {
+            const byteCharacters = atob(base64Audio);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i += 1) {
+              byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: "audio/wav" });
+            playbackUri = URL.createObjectURL(blob);
+            tempAudioUrlRef.current = playbackUri;
+          } catch {
+            onWarn?.("Unable to prepare web audio preview.");
+          }
+        } else {
+          const tempFile = `${FileSystem.cacheDirectory || ""}medilink-ai-tts-${Date.now()}.wav`;
+          if (!tempFile) {
+            onError?.("Unable to prepare local audio cache for playback.");
+            return;
+          }
+          await FileSystem.writeAsStringAsync(tempFile, base64Audio, {
+            encoding: BASE64_ENCODING,
+          });
+          tempAudioPathRef.current = tempFile;
+          playbackUri = tempFile;
         }
-        await FileSystem.writeAsStringAsync(tempFile, base64Audio, {
-          encoding: BASE64_ENCODING,
-        });
-        tempAudioPathRef.current = tempFile;
-        playbackUri = tempFile;
       } else if (absoluteUrl) {
         playbackUri = absoluteUrl;
       }
@@ -128,6 +157,7 @@ export default function useAiSpeechPlayer({
 
       const model = String(options?.model || "").trim();
       const forceServer = Boolean(options?.forceServer);
+      const language = String(options?.language || defaultLanguage || "en").trim() || "en";
 
       if (preferDeviceSpeech && !forceServer) {
         cleanupSound()
@@ -135,7 +165,7 @@ export default function useAiSpeechPlayer({
             setLastAudioUrl("");
             setIsPlaying(true);
             Speech.speak(text, {
-              language: "en",
+              language,
               pitch: 1.0,
               rate: 1.0,
               onDone: () => setIsPlaying(false),

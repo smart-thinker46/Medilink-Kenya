@@ -32,7 +32,7 @@ import {
   Volume2,
   Mic,
 } from "lucide-react-native";
-import { useAudioRecorder, RecordingPresets } from "expo-audio";
+import { useAudioRecorder, useAudioRecorderState, RecordingPresets } from "expo-audio";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -44,6 +44,7 @@ import OnlineStatusChip from "@/components/OnlineStatusChip";
 import { useToast } from "@/components/ToastProvider";
 import { getFirstName, getTimeGreeting } from "@/utils/greeting";
 import useAiSpeechPlayer from "@/utils/useAiSpeechPlayer";
+import UserAvatar from "@/components/UserAvatar";
 
 export default function AdminOverviewScreen() {
   const router = useRouter();
@@ -51,8 +52,9 @@ export default function AdminOverviewScreen() {
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
   const { theme, isDark } = useAppTheme();
-  const { t } = useI18n();
+  const { t, formatDateTime } = useI18n();
   const { auth } = useAuthStore();
+  const avatarUser = auth?.user || {};
   const firstName = getFirstName(auth?.user, "Admin");
   const timeGreeting = getTimeGreeting();
   const queryClient = useQueryClient();
@@ -70,10 +72,71 @@ export default function AdminOverviewScreen() {
     queryFn: () => apiClient.getAdminOverview(),
   });
 
+  const [hireFilters, setHireFilters] = useState({
+    status: "ALL",
+    search: "",
+    start: "",
+    end: "",
+  });
+  const [paymentFilters, setPaymentFilters] = useState({
+    status: "ALL",
+    type: "ALL",
+    search: "",
+    start: "",
+    end: "",
+    payerRole: "ALL",
+    recipientRole: "ALL",
+  });
+
+  const hireParams = useMemo(
+    () => ({
+      hireStatus: hireFilters.status,
+      hireSearch: hireFilters.search,
+      hireStart: hireFilters.start,
+      hireEnd: hireFilters.end,
+    }),
+    [hireFilters],
+  );
+
+  const operationsQuery = useQuery({
+    queryKey: ["admin-operations", hireParams],
+    queryFn: () => apiClient.adminGetOperations(hireParams),
+  });
+
+  const paymentParams = useMemo(
+    () => ({
+      status: paymentFilters.status === "ALL" ? undefined : paymentFilters.status,
+      type: paymentFilters.type === "ALL" ? undefined : paymentFilters.type,
+      search: paymentFilters.search || undefined,
+      start: paymentFilters.start || undefined,
+      end: paymentFilters.end || undefined,
+      payerRole: paymentFilters.payerRole === "ALL" ? undefined : paymentFilters.payerRole,
+      recipientRole:
+        paymentFilters.recipientRole === "ALL" ? undefined : paymentFilters.recipientRole,
+    }),
+    [paymentFilters],
+  );
+
+  const paymentsQuery = useQuery({
+    queryKey: ["admin-payments-history", paymentParams],
+    queryFn: () => apiClient.getPaymentHistory(paymentParams),
+  });
+
   const overview = overviewQuery.data || {};
   const totals = overview.totals || {};
   const revenue = overview.revenue || {};
   const top = overview.top || {};
+  const operations = operationsQuery.data || {};
+  const hiresDetailed = Array.isArray(operations?.hiresDetailed)
+    ? operations.hiresDetailed
+    : [];
+  const payments = Array.isArray(paymentsQuery.data) ? paymentsQuery.data : [];
+  const latestHires = [...hiresDetailed].sort(
+    (a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0),
+  );
+  const recentPayments = [...payments].sort(
+    (a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0),
+  );
 
   const aiSettingsQuery = useQuery({
     queryKey: ["ai-settings", "admin-overview"],
@@ -142,11 +205,18 @@ export default function AdminOverviewScreen() {
   const [helpDeskQuery, setHelpDeskQuery] = useState("");
   const [helpDeskResponse, setHelpDeskResponse] = useState(null);
   const [isHelpDeskVoiceRecording, setIsHelpDeskVoiceRecording] = useState(false);
-  const helpDeskAudioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const helpDeskAudioRecorder = useAudioRecorder({
+    ...RecordingPresets.HIGH_QUALITY,
+    isMeteringEnabled: true,
+  });
+  const helpDeskRecorderState = useAudioRecorderState(helpDeskAudioRecorder, 250);
   const helpDeskWebMediaRecorderRef = React.useRef(null);
   const helpDeskWebMediaStreamRef = React.useRef(null);
   const helpDeskWebAudioChunksRef = React.useRef([]);
-
+  const helpDeskWebSilenceCleanupRef = React.useRef(null);
+  const helpDeskSilenceLastSoundAtRef = useRef(0);
+  const helpDeskSilenceStartedAtRef = useRef(0);
+  const helpDeskAutoStopInFlightRef = useRef(false);
   const normalizeUserFilterParams = (params = {}) => {
     const source = params || {};
     const normalized = { ...source };
@@ -382,8 +452,42 @@ export default function AdminOverviewScreen() {
       if (stream?.getTracks) {
         stream.getTracks().forEach((track) => track.stop());
       }
+      if (helpDeskWebSilenceCleanupRef.current) {
+        helpDeskWebSilenceCleanupRef.current();
+        helpDeskWebSilenceCleanupRef.current = null;
+      }
     };
   }, [helpDeskAudioRecorder, isHelpDeskVoiceRecording]);
+
+  React.useEffect(() => {
+    if (!isHelpDeskVoiceRecording || Platform.OS === "web") {
+      helpDeskSilenceLastSoundAtRef.current = 0;
+      helpDeskSilenceStartedAtRef.current = 0;
+      helpDeskAutoStopInFlightRef.current = false;
+      return;
+    }
+    const metering = helpDeskRecorderState?.metering;
+    if (typeof metering !== "number") return;
+    const now = Date.now();
+    if (!helpDeskSilenceStartedAtRef.current) {
+      helpDeskSilenceStartedAtRef.current = now;
+    }
+    const threshold = metering >= 0 && metering <= 1 ? 0.02 : -45;
+    const isSilent = metering <= threshold;
+    if (!helpDeskSilenceLastSoundAtRef.current) {
+      helpDeskSilenceLastSoundAtRef.current = now;
+    }
+    if (!isSilent) {
+      helpDeskSilenceLastSoundAtRef.current = now;
+      return;
+    }
+    const silentFor = now - helpDeskSilenceLastSoundAtRef.current;
+    const recordedFor = now - helpDeskSilenceStartedAtRef.current;
+    if (recordedFor > 1200 && silentFor > 1200 && !helpDeskAutoStopInFlightRef.current) {
+      helpDeskAutoStopInFlightRef.current = true;
+      stopHelpDeskNativeRecordingAndTranscribe();
+    }
+  }, [isHelpDeskVoiceRecording, helpDeskRecorderState?.metering]);
 
   const helpDeskVoiceToTextMutation = useMutation({
     mutationFn: (input) => {
@@ -423,6 +527,47 @@ export default function AdminOverviewScreen() {
     },
   });
 
+  const startWebSilenceMonitor = (stream, onSilence) => {
+    if (typeof window === "undefined") return () => {};
+    const AudioContextApi = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextApi) return () => {};
+    const audioContext = new AudioContextApi();
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    const source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
+    const data = new Uint8Array(analyser.fftSize);
+    let lastSoundAt = Date.now();
+    let startedAt = Date.now();
+    const interval = setInterval(() => {
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 1) {
+        const value = (data[i] - 128) / 128;
+        sum += value * value;
+      }
+      const rms = Math.sqrt(sum / data.length);
+      const now = Date.now();
+      if (rms > 0.02) {
+        lastSoundAt = now;
+      }
+      const silentFor = now - lastSoundAt;
+      const recordedFor = now - startedAt;
+      if (recordedFor > 1200 && silentFor > 1200) {
+        onSilence?.();
+      }
+    }, 200);
+    return () => {
+      clearInterval(interval);
+      try {
+        source.disconnect();
+      } catch {}
+      try {
+        audioContext.close();
+      } catch {}
+    };
+  };
+
   const stopHelpDeskWebRecorder = async () => {
     const recorder = helpDeskWebMediaRecorderRef.current;
     if (!recorder) {
@@ -441,6 +586,10 @@ export default function AdminOverviewScreen() {
             stream.getTracks().forEach((track) => track.stop());
           }
           helpDeskWebMediaStreamRef.current = null;
+          if (helpDeskWebSilenceCleanupRef.current) {
+            helpDeskWebSilenceCleanupRef.current();
+            helpDeskWebSilenceCleanupRef.current = null;
+          }
           resolve(audioBlob);
         } catch (error) {
           reject(error);
@@ -452,6 +601,10 @@ export default function AdminOverviewScreen() {
         }
         helpDeskWebMediaStreamRef.current = null;
         helpDeskWebMediaRecorderRef.current = null;
+        if (helpDeskWebSilenceCleanupRef.current) {
+          helpDeskWebSilenceCleanupRef.current();
+          helpDeskWebSilenceCleanupRef.current = null;
+        }
         reject(new Error("Web recorder failed."));
       };
       try {
@@ -462,6 +615,10 @@ export default function AdminOverviewScreen() {
         }
         helpDeskWebMediaStreamRef.current = null;
         helpDeskWebMediaRecorderRef.current = null;
+        if (helpDeskWebSilenceCleanupRef.current) {
+          helpDeskWebSilenceCleanupRef.current();
+          helpDeskWebSilenceCleanupRef.current = null;
+        }
         reject(error);
       }
     });
@@ -497,6 +654,24 @@ export default function AdminOverviewScreen() {
       };
       recorder.start();
       helpDeskWebMediaRecorderRef.current = recorder;
+      if (helpDeskWebSilenceCleanupRef.current) {
+        helpDeskWebSilenceCleanupRef.current();
+      }
+      helpDeskWebSilenceCleanupRef.current = startWebSilenceMonitor(stream, async () => {
+        if (helpDeskAutoStopInFlightRef.current) return;
+        if (helpDeskWebMediaRecorderRef.current?.state !== "recording") return;
+        helpDeskAutoStopInFlightRef.current = true;
+        try {
+          const audioBlob = await stopHelpDeskWebRecorder();
+          setIsHelpDeskVoiceRecording(false);
+          helpDeskVoiceToTextMutation.mutate(audioBlob);
+        } catch (error) {
+          setIsHelpDeskVoiceRecording(false);
+          showToast(error?.message || "Failed to stop web voice recording.", "error");
+        } finally {
+          helpDeskAutoStopInFlightRef.current = false;
+        }
+      });
     } catch (error) {
       if (stream?.getTracks) {
         stream.getTracks().forEach((track) => track.stop());
@@ -504,6 +679,24 @@ export default function AdminOverviewScreen() {
       helpDeskWebMediaStreamRef.current = null;
       helpDeskWebMediaRecorderRef.current = null;
       throw error;
+    }
+  };
+
+  const stopHelpDeskNativeRecordingAndTranscribe = async () => {
+    try {
+      const recorded = await helpDeskAudioRecorder.stop();
+      setIsHelpDeskVoiceRecording(false);
+      const uri = String(recorded?.uri || "").trim();
+      if (!uri) {
+        showToast("No recording captured. Try again.", "warning");
+        return;
+      }
+      helpDeskVoiceToTextMutation.mutate(uri);
+    } catch (error) {
+      setIsHelpDeskVoiceRecording(false);
+      showToast(error?.message || "Failed to stop recording.", "error");
+    } finally {
+      helpDeskAutoStopInFlightRef.current = false;
     }
   };
 
@@ -525,6 +718,7 @@ export default function AdminOverviewScreen() {
       try {
         await startHelpDeskWebRecorder();
         setIsHelpDeskVoiceRecording(true);
+        helpDeskAutoStopInFlightRef.current = false;
         showToast("Listening... click mic again to stop.", "info");
       } catch (error) {
         setIsHelpDeskVoiceRecording(false);
@@ -534,19 +728,7 @@ export default function AdminOverviewScreen() {
     }
 
     if (isHelpDeskVoiceRecording) {
-      try {
-        const recorded = await helpDeskAudioRecorder.stop();
-        setIsHelpDeskVoiceRecording(false);
-        const uri = String(recorded?.uri || "").trim();
-        if (!uri) {
-          showToast("No recording captured. Try again.", "warning");
-          return;
-        }
-        helpDeskVoiceToTextMutation.mutate(uri);
-      } catch (error) {
-        setIsHelpDeskVoiceRecording(false);
-        showToast(error?.message || "Failed to stop recording.", "error");
-      }
+      await stopHelpDeskNativeRecordingAndTranscribe();
       return;
     }
 
@@ -554,6 +736,9 @@ export default function AdminOverviewScreen() {
       await helpDeskAudioRecorder.prepareToRecordAsync();
       helpDeskAudioRecorder.record();
       setIsHelpDeskVoiceRecording(true);
+      helpDeskSilenceLastSoundAtRef.current = Date.now();
+      helpDeskSilenceStartedAtRef.current = Date.now();
+      helpDeskAutoStopInFlightRef.current = false;
       showToast("Listening... tap mic again to stop.", "info");
     } catch (error) {
       setIsHelpDeskVoiceRecording(false);
@@ -643,11 +828,22 @@ export default function AdminOverviewScreen() {
       color: theme.warning,
       route: "/(app)/(admin)/users?role=PHARMACY_ADMIN",
     },
+    {
+      id: "online",
+      title: "Online Now",
+      value: overview?.onlineStatus?.online || 0,
+      icon: Users,
+      color: theme.success,
+      route: "/(app)/(shared)/online-users",
+    },
   ];
   const sidebarLinks = [
     { key: "dashboard", title: "Dashboard", href: "/(app)/(admin)", icon: Home },
     { key: "users", title: "Users", href: "/(app)/(admin)/users", icon: Users },
+    { key: "online-users", title: "Online Users", href: "/(app)/(shared)/online-users", icon: Users },
     { key: "ai-finder", title: "AI Finder", href: "/(app)/(shared)/ai-finder", icon: Sparkles },
+    { key: "ai-settings", title: "AI Settings", href: "/(app)/(admin)/ai-settings", icon: Volume2 },
+    { key: "products", title: "Products", href: "/(app)/(admin)/products", icon: Store },
     { key: "jobs", title: "Jobs", href: "/(app)/(shared)/jobs", icon: Briefcase },
     { key: "subscriptions", title: "Subscriptions", href: "/(app)/(admin)/subscriptions", icon: CreditCard },
     { key: "control-center", title: "Control Center", href: "/(app)/(admin)/control-center", icon: ShieldAlert },
@@ -743,6 +939,13 @@ export default function AdminOverviewScreen() {
               </Text>
             </View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <UserAvatar
+                user={avatarUser}
+                size={44}
+                backgroundColor={theme.surface}
+                borderColor={theme.border}
+                textColor={theme.textSecondary}
+              />
               <TouchableOpacity
                 style={{
                   width: 40,
@@ -784,16 +987,24 @@ export default function AdminOverviewScreen() {
               </TouchableOpacity>
             </View>
           </View>
-          <Text
-            style={{
-              fontSize: 14,
-              fontFamily: "Inter_400Regular",
-              color: theme.textSecondary,
-              marginTop: 6,
-            }}
-          >
-            {timeGreeting}, {firstName}. Monitor and control the entire Medilink ecosystem.
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6 }}>
+            <Text
+              style={{
+                fontSize: 14,
+                fontFamily: "Inter_400Regular",
+                color: theme.textSecondary,
+              }}
+            >
+              {timeGreeting}, {firstName}. Monitor and control the entire Medilink ecosystem.
+            </Text>
+            <UserAvatar
+              user={avatarUser}
+              size={32}
+              backgroundColor={theme.surface}
+              borderColor={theme.border}
+              textColor={theme.textSecondary}
+            />
+          </View>
           <OnlineStatusChip isOnline={isOnline} theme={theme} style={{ marginTop: 10 }} />
         </View>
 
@@ -965,6 +1176,363 @@ export default function AdminOverviewScreen() {
               marginBottom: 12,
             }}
           >
+            Medics Hired
+          </Text>
+          <View
+            style={{
+              backgroundColor: theme.card,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: theme.border,
+              padding: 14,
+              marginBottom: 16,
+            }}
+          >
+            <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 8 }}>
+              Filters
+            </Text>
+            <TextInput
+              value={hireFilters.search}
+              onChangeText={(value) => setHireFilters((prev) => ({ ...prev, search: value }))}
+              placeholder="Search medic or hospital"
+              placeholderTextColor={theme.textSecondary}
+              style={{
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 10,
+                paddingHorizontal: 10,
+                paddingVertical: 8,
+                color: theme.text,
+                backgroundColor: theme.surface,
+                fontSize: 12,
+                marginBottom: 8,
+              }}
+            />
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+              <TextInput
+                value={hireFilters.start}
+                onChangeText={(value) => setHireFilters((prev) => ({ ...prev, start: value }))}
+                placeholder="Start YYYY-MM-DD"
+                placeholderTextColor={theme.textSecondary}
+                style={{
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  color: theme.text,
+                  backgroundColor: theme.surface,
+                  fontSize: 12,
+                }}
+              />
+              <TextInput
+                value={hireFilters.end}
+                onChangeText={(value) => setHireFilters((prev) => ({ ...prev, end: value }))}
+                placeholder="End YYYY-MM-DD"
+                placeholderTextColor={theme.textSecondary}
+                style={{
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  color: theme.text,
+                  backgroundColor: theme.surface,
+                  fontSize: 12,
+                }}
+              />
+            </View>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+              {["ALL", "HIRED", "PENDING", "COMPLETED", "CANCELLED"].map((status) => (
+                <TouchableOpacity
+                  key={status}
+                  onPress={() => setHireFilters((prev) => ({ ...prev, status }))}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: hireFilters.status === status ? theme.primary : theme.border,
+                    backgroundColor:
+                      hireFilters.status === status ? `${theme.primary}20` : theme.surface,
+                  }}
+                >
+                  <Text style={{ fontSize: 11, color: hireFilters.status === status ? theme.primary : theme.textSecondary }}>
+                    {status}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {operationsQuery.isLoading ? (
+              <ActivityIndicator size="small" color={theme.primary} />
+            ) : latestHires.length === 0 ? (
+              <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                No hires recorded yet.
+              </Text>
+            ) : (
+              latestHires.map((hire) => (
+                <View
+                  key={hire.id}
+                  style={{
+                    paddingVertical: 8,
+                    borderBottomWidth: 1,
+                    borderBottomColor: theme.border,
+                  }}
+                >
+                  <Text style={{ fontSize: 13, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                    {hire.medicName || "Medic"} • {hire.status || "HIRED"}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                    Hired by: {hire.hospitalName || hire.hospitalAdminId || "Unknown"}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: theme.textTertiary, marginTop: 2 }}>
+                    {formatDateTime ? formatDateTime(hire.createdAt) : hire.createdAt}
+                  </Text>
+                </View>
+              ))
+            )}
+            <TouchableOpacity
+              style={{ marginTop: 10 }}
+              onPress={() => router.push("/(app)/(admin)/audit-logs")}
+            >
+              <Text style={{ color: theme.primary, fontSize: 12, fontFamily: "Inter_600SemiBold" }}>
+                View all hiring activity
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text
+            style={{
+              fontSize: 18,
+              fontFamily: "Nunito_600SemiBold",
+              color: theme.text,
+              marginBottom: 12,
+            }}
+          >
+            Payments Activity
+          </Text>
+          <View
+            style={{
+              backgroundColor: theme.card,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: theme.border,
+              padding: 14,
+              marginBottom: 16,
+            }}
+          >
+            <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 8 }}>
+              Filters
+            </Text>
+            <TextInput
+              value={paymentFilters.search}
+              onChangeText={(value) => setPaymentFilters((prev) => ({ ...prev, search: value }))}
+              placeholder="Search payer, recipient, or reason"
+              placeholderTextColor={theme.textSecondary}
+              style={{
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 10,
+                paddingHorizontal: 10,
+                paddingVertical: 8,
+                color: theme.text,
+                backgroundColor: theme.surface,
+                fontSize: 12,
+                marginBottom: 8,
+              }}
+            />
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+              <TextInput
+                value={paymentFilters.start}
+                onChangeText={(value) => setPaymentFilters((prev) => ({ ...prev, start: value }))}
+                placeholder="Start YYYY-MM-DD"
+                placeholderTextColor={theme.textSecondary}
+                style={{
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  color: theme.text,
+                  backgroundColor: theme.surface,
+                  fontSize: 12,
+                }}
+              />
+              <TextInput
+                value={paymentFilters.end}
+                onChangeText={(value) => setPaymentFilters((prev) => ({ ...prev, end: value }))}
+                placeholder="End YYYY-MM-DD"
+                placeholderTextColor={theme.textSecondary}
+                style={{
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  color: theme.text,
+                  backgroundColor: theme.surface,
+                  fontSize: 12,
+                }}
+              />
+            </View>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+              {["ALL", "PAID", "PENDING", "FAILED", "CANCELLED", "CANCELED"].map((status) => (
+                <TouchableOpacity
+                  key={status}
+                  onPress={() => setPaymentFilters((prev) => ({ ...prev, status }))}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: paymentFilters.status === status ? theme.primary : theme.border,
+                    backgroundColor:
+                      paymentFilters.status === status ? `${theme.primary}20` : theme.surface,
+                  }}
+                >
+                  <Text style={{ fontSize: 11, color: paymentFilters.status === status ? theme.primary : theme.textSecondary }}>
+                    {status}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+              {["ALL", "PATIENT", "MEDIC", "HOSPITAL_ADMIN", "PHARMACY_ADMIN", "SUPER_ADMIN"].map(
+                (role) => (
+                  <TouchableOpacity
+                    key={`payer-${role}`}
+                    onPress={() => setPaymentFilters((prev) => ({ ...prev, payerRole: role }))}
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor:
+                        paymentFilters.payerRole === role ? theme.primary : theme.border,
+                      backgroundColor:
+                        paymentFilters.payerRole === role ? `${theme.primary}20` : theme.surface,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        color:
+                          paymentFilters.payerRole === role ? theme.primary : theme.textSecondary,
+                      }}
+                    >
+                      Payer: {role}
+                    </Text>
+                  </TouchableOpacity>
+                ),
+              )}
+            </View>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+              {["ALL", "PATIENT", "MEDIC", "HOSPITAL_ADMIN", "PHARMACY_ADMIN", "SUPER_ADMIN"].map(
+                (role) => (
+                  <TouchableOpacity
+                    key={`recipient-${role}`}
+                    onPress={() => setPaymentFilters((prev) => ({ ...prev, recipientRole: role }))}
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor:
+                        paymentFilters.recipientRole === role ? theme.primary : theme.border,
+                      backgroundColor:
+                        paymentFilters.recipientRole === role ? `${theme.primary}20` : theme.surface,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        color:
+                          paymentFilters.recipientRole === role
+                            ? theme.primary
+                            : theme.textSecondary,
+                      }}
+                    >
+                      Recipient: {role}
+                    </Text>
+                  </TouchableOpacity>
+                ),
+              )}
+            </View>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+              {["ALL", "SUBSCRIPTION", "ORDER", "VIDEO_CALL", "TRANSFER", "PAYMENT"].map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  onPress={() => setPaymentFilters((prev) => ({ ...prev, type }))}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: paymentFilters.type === type ? theme.primary : theme.border,
+                    backgroundColor:
+                      paymentFilters.type === type ? `${theme.primary}20` : theme.surface,
+                  }}
+                >
+                  <Text style={{ fontSize: 11, color: paymentFilters.type === type ? theme.primary : theme.textSecondary }}>
+                    {type}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {paymentsQuery.isLoading ? (
+              <ActivityIndicator size="small" color={theme.primary} />
+            ) : recentPayments.length === 0 ? (
+              <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                No payments recorded yet.
+              </Text>
+            ) : (
+              recentPayments.map((payment) => (
+                <View
+                  key={payment.id}
+                  style={{
+                    paddingVertical: 8,
+                    borderBottomWidth: 1,
+                    borderBottomColor: theme.border,
+                  }}
+                >
+                  <Text style={{ fontSize: 13, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                    {payment.payerEmail || payment.userId || "Unknown payer"} • {payment.currency || "KES"}{" "}
+                    {payment.amount || 0}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                    Reason: {payment.description || payment.type || "Payment"}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: theme.textTertiary, marginTop: 2 }}>
+                    {payment.payerRole || "Unknown"} → {payment.recipientRole || "N/A"}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: theme.textTertiary, marginTop: 2 }}>
+                    {formatDateTime ? formatDateTime(payment.createdAt) : payment.createdAt}
+                  </Text>
+                </View>
+              ))
+            )}
+            <TouchableOpacity
+              style={{ marginTop: 10 }}
+              onPress={() => router.push("/(app)/(admin)/subscriptions")}
+            >
+              <Text style={{ color: theme.primary, fontSize: 12, fontFamily: "Inter_600SemiBold" }}>
+                View subscriptions & payments
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text
+            style={{
+              fontSize: 18,
+              fontFamily: "Nunito_600SemiBold",
+              color: theme.text,
+              marginBottom: 12,
+            }}
+          >
             AI Features
           </Text>
           <View
@@ -1013,7 +1581,7 @@ export default function AdminOverviewScreen() {
               </Text>
             ) : null}
             <TouchableOpacity
-              onPress={() => router.push("/(app)/(shared)/settings")}
+              onPress={() => router.push("/(app)/(admin)/ai-settings")}
               style={{
                 marginTop: 10,
                 borderRadius: 10,

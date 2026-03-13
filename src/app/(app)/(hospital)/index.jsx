@@ -46,6 +46,7 @@ import { useI18n } from "@/utils/i18n";
 import { resolveMediaUrl } from "@/utils/media";
 import { useAuthStore } from "@/utils/auth/store";
 import { getFirstName, getTimeGreeting } from "@/utils/greeting";
+import UserAvatar from "@/components/UserAvatar";
 
 export default function HospitalHomeScreen() {
   const router = useRouter();
@@ -56,6 +57,7 @@ export default function HospitalHomeScreen() {
   const { t } = useI18n();
   const { profile } = useHospitalProfile();
   const { auth } = useAuthStore();
+  const avatarUser = { ...(auth?.user || {}), ...(profile || {}) };
   const isSuperAdmin = String(auth?.user?.role || "").toUpperCase() === "SUPER_ADMIN";
   const isWide = screenWidth >= 1024;
   const { unreadCount } = useNotifications();
@@ -301,84 +303,94 @@ export default function HospitalHomeScreen() {
               >
               {timeGreeting},
             </Text>
-            <Text
-              style={{
-                fontSize: 24,
-                fontFamily: "Nunito_700Bold",
-                color: theme.text,
-              }}
-            >
-              {firstName}
-            </Text>
-          </View>
-
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              backgroundColor: isVerified ? `${theme.success}15` : `${theme.error}15`,
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              borderRadius: 12,
-            }}
-          >
-            {isVerified ? (
-              <ShieldCheck color={theme.success} size={16} />
-            ) : (
-              <ShieldAlert color={theme.error} size={16} />
-            )}
-            <Text
-              style={{
-                fontSize: 12,
-                fontFamily: "Inter_600SemiBold",
-                color: isVerified ? theme.success : theme.error,
-                marginLeft: 6,
-              }}
-            >
-              {isVerified ? "Verified" : "Not Verified"}
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              backgroundColor: theme.surface,
-              justifyContent: "center",
-              alignItems: "center",
-              marginLeft: 12,
-            }}
-            onPress={() => router.push("/(app)/(shared)/notifications")}
-          >
-            <Bell color={theme.iconColor} size={20} />
-            {unreadCount > 0 && (
-              <View
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <Text
                 style={{
-                  position: "absolute",
-                  top: -2,
-                  right: -2,
-                  backgroundColor: theme.error,
-                  borderRadius: 10,
-                  minWidth: 18,
-                  height: 18,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  paddingHorizontal: 4,
+                  fontSize: 24,
+                  fontFamily: "Nunito_700Bold",
+                  color: theme.text,
                 }}
               >
-                <Text
+                {firstName}
+              </Text>
+              <UserAvatar
+                user={avatarUser}
+                size={34}
+                backgroundColor={theme.surface}
+                borderColor={theme.border}
+                textColor={theme.textSecondary}
+              />
+            </View>
+          </View>
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: isVerified ? `${theme.success}15` : `${theme.error}15`,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 12,
+              }}
+            >
+              {isVerified ? (
+                <ShieldCheck color={theme.success} size={16} />
+              ) : (
+                <ShieldAlert color={theme.error} size={16} />
+              )}
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontFamily: "Inter_600SemiBold",
+                  color: isVerified ? theme.success : theme.error,
+                  marginLeft: 6,
+                }}
+              >
+                {isVerified ? "Verified" : "Not Verified"}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: theme.surface,
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+              onPress={() => router.push("/(app)/(shared)/notifications")}
+            >
+              <Bell color={theme.iconColor} size={20} />
+              {unreadCount > 0 && (
+                <View
                   style={{
-                    fontSize: 10,
-                    fontFamily: "Inter_600SemiBold",
-                    color: "#FFFFFF",
+                    position: "absolute",
+                    top: -2,
+                    right: -2,
+                    backgroundColor: theme.error,
+                    borderRadius: 10,
+                    minWidth: 18,
+                    height: 18,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    paddingHorizontal: 4,
                   }}
                 >
-                  {unreadCount}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      fontFamily: "Inter_600SemiBold",
+                      color: "#FFFFFF",
+                    }}
+                  >
+                    {unreadCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
 
           <TouchableOpacity
             style={{

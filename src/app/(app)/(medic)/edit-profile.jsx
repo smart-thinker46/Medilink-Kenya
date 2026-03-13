@@ -55,6 +55,9 @@ export default function MedicEditProfileScreen() {
     locationLat: "",
     locationLng: "",
     consultationFee: "",
+    rating: "",
+    availability: "",
+    languages: "",
   });
 
   const [profilePhoto, setProfilePhoto] = useState(null);
@@ -110,6 +113,11 @@ export default function MedicEditProfileScreen() {
         locationLat: profile.location?.lat?.toString() || "",
         locationLng: profile.location?.lng?.toString() || "",
         consultationFee: profile.consultationFee?.toString() || "",
+        rating: profile.rating?.toString() || "",
+        availability: profile.availability || "",
+        languages: Array.isArray(profile.languages)
+          ? profile.languages.join(", ")
+          : profile.languages || "",
       }));
 
       setProfilePhoto(
@@ -275,6 +283,18 @@ export default function MedicEditProfileScreen() {
         consultationFee: formData.consultationFee
           ? Number(formData.consultationFee)
           : null,
+        rating: formData.rating ? Number(formData.rating) : null,
+        availability: formData.availability,
+        availableDays: formData.availability
+          ? formData.availability
+              .split(",")
+              .map((item) => item.trim())
+              .filter(Boolean)
+          : [],
+        languages: formData.languages
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean),
         profilePhoto: uploadedProfilePhoto,
         profilePhotoUrl: uploadedProfilePhoto,
         license: uploadedLicense,
@@ -626,6 +646,31 @@ export default function MedicEditProfileScreen() {
             }
             placeholder="Day, Night..."
             required
+          />
+          <Input
+            label="Languages Spoken"
+            value={formData.languages}
+            onChangeText={(value) =>
+              setFormData((prev) => ({ ...prev, languages: value }))
+            }
+            placeholder="English, Swahili"
+          />
+          <Input
+            label="Availability"
+            value={formData.availability}
+            onChangeText={(value) =>
+              setFormData((prev) => ({ ...prev, availability: value }))
+            }
+            placeholder="Mon–Fri, 9am–5pm"
+          />
+          <Input
+            label="Rating (0-5)"
+            value={formData.rating}
+            onChangeText={(value) =>
+              setFormData((prev) => ({ ...prev, rating: value }))
+            }
+            keyboardType="numeric"
+            placeholder="4.5"
           />
           <Input
             label="Bank Name"

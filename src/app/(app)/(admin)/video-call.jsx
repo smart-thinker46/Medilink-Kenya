@@ -6,9 +6,8 @@ import { ArrowLeft, Video, Phone } from "lucide-react-native";
 import { useQuery } from "@tanstack/react-query";
 
 import ScreenLayout from "@/components/ScreenLayout";
-import VideoCall from "@/components/VideoCall";
 import { useAppTheme } from "@/components/ThemeProvider";
-import { useVideoCall } from "@/utils/useVideoCall";
+import { useVideoCallContext as useVideoCall } from "@/utils/videoCallContext";
 import apiClient from "@/utils/api";
 import { useToast } from "@/components/ToastProvider";
 import { useI18n } from "@/utils/i18n";
@@ -284,44 +283,7 @@ export default function AdminVideoCallScreen() {
           ))}
         </View>
 
-        <VideoCall
-          isActive={Boolean(currentCall)}
-          incomingCall={incomingCall}
-          participantName={currentCall?.participantName}
-          participantRole={currentCall?.participantRole}
-          callMode={currentCall?.mode || callMode}
-          callStatus={callStatus}
-          callDuration={callDuration}
-          callType={currentCall?.type || "consultation"}
-          sessionId={currentCall?.sessionId}
-          remoteVideoUrl={currentCall?.remoteVideoUrl}
-          callSession={currentCall?.callSession}
-          isPremium
-          onAcceptCall={() => {
-            if (incomingCall?.sessionId) {
-              answerCall(incomingCall.sessionId, {
-                participantName: incomingCall.participantName,
-                participantRole: incomingCall.participantRole,
-                participantId: incomingCall.participantId,
-                type: incomingCall.type,
-                mode: incomingCall.mode,
-              });
-            }
-          }}
-          onRejectCall={() => {
-            if (incomingCall?.sessionId) {
-              rejectCall(incomingCall.sessionId);
-            }
-          }}
-          onEndCall={() => endCall()}
-          onToggleVideo={toggleVideo}
-          onToggleAudio={toggleAudio}
-          onToggleCamera={toggleCamera}
-          onToggleHold={toggleHold}
-          onRemoteJoined={() => markCallConnected()}
-        />
       </ScrollView>
     </ScreenLayout>
   );
 }
-

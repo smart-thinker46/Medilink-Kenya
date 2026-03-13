@@ -47,6 +47,8 @@ export default function PatientDetailsScreen() {
   const [recoveryStatus, setRecoveryStatus] = useState("UNDER_TREATMENT");
   const [attachments, setAttachments] = useState([]);
   const [accessRequestNote, setAccessRequestNote] = useState("");
+  const [additionalCharge, setAdditionalCharge] = useState("");
+  const [additionalChargeNote, setAdditionalChargeNote] = useState("");
 
   const healthStatusQuery = useQuery({
     queryKey: ["medic-patient-health-status", patientId],
@@ -156,6 +158,18 @@ export default function PatientDetailsScreen() {
     },
   });
 
+  const paymentRequestMutation = useMutation({
+    mutationFn: (payload) => apiClient.createPaymentRequest(payload),
+    onSuccess: () => {
+      showToast("Payment request sent to patient.", "success");
+      setAdditionalCharge("");
+      setAdditionalChargeNote("");
+    },
+    onError: (error) => {
+      showToast(error.message || "Failed to send payment request.", "error");
+    },
+  });
+
   const handleUpdate = () => {
     if (!hasRecordAccess) {
       showToast("Patient consent is required before updating records.", "warning");
@@ -235,6 +249,28 @@ export default function PatientDetailsScreen() {
         name: item.name,
         url: item.url,
       })),
+    });
+  };
+
+  const handleRequestAdditionalCharge = () => {
+    if (!hasRecordAccess) {
+      showToast("Patient consent is required before requesting charges.", "warning");
+      return;
+    }
+    const amount = Number(additionalCharge || 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast("Enter a valid additional charge amount.", "warning");
+      return;
+    }
+    if (!patientId) {
+      showToast("Missing patient details.", "warning");
+      return;
+    }
+    paymentRequestMutation.mutate({
+      patientId,
+      amount,
+      currency: "KES",
+      description: additionalChargeNote?.trim() || "Additional charges",
     });
   };
 
@@ -427,6 +463,40 @@ export default function PatientDetailsScreen() {
               </Text>
             </View>
           )}
+          <View
+            style={{
+              backgroundColor: theme.card,
+              borderRadius: 16,
+              padding: 16,
+              marginBottom: 16,
+              borderWidth: 1,
+              borderColor: theme.border,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 16,
+                fontFamily: "Inter_600SemiBold",
+                color: theme.text,
+                marginBottom: 6,
+              }}
+            >
+              Patient Health Hub
+            </Text>
+            <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 10 }}>
+              Review and update the patient Health Hub insights.
+            </Text>
+            <Button
+              title={hasRecordAccess ? "Open Health Hub" : "Access Required"}
+              disabled={!hasRecordAccess}
+              onPress={() =>
+                router.push({
+                  pathname: "/(app)/(shared)/patient-health-hub",
+                  params: { patientId },
+                })
+              }
+            />
+          </View>
           {hasRecordAccess && (
             <View
               style={{
@@ -781,6 +851,40 @@ export default function PatientDetailsScreen() {
             title="Save Clinical Record"
             onPress={handleSaveClinicalUpdate}
             loading={clinicalUpdateMutation.isLoading}
+            disabled={!hasRecordAccess}
+          />
+
+          <View style={{ height: 24 }} />
+
+          <Text
+            style={{
+              fontSize: 16,
+              fontFamily: "Inter_600SemiBold",
+              color: theme.text,
+              marginBottom: 10,
+            }}
+          >
+            Additional Charges (Optional)
+          </Text>
+          <Input
+            label="Amount (KES)"
+            value={additionalCharge}
+            onChangeText={setAdditionalCharge}
+            placeholder="e.g. 1500"
+            keyboardType="numeric"
+          />
+          <Input
+            label="Note (optional)"
+            value={additionalChargeNote}
+            onChangeText={setAdditionalChargeNote}
+            placeholder="Explain the additional charges"
+            multiline
+            numberOfLines={3}
+          />
+          <Button
+            title="Request Payment"
+            onPress={handleRequestAdditionalCharge}
+            loading={paymentRequestMutation.isLoading}
             disabled={!hasRecordAccess}
           />
         </ScrollView>

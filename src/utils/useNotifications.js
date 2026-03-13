@@ -32,7 +32,8 @@ export const useNotifications = () => {
   useEffect(() => {
     if (!auth?.token || !auth?.user?.id) return;
 
-    const baseUrl = process.env.EXPO_PUBLIC_BASE_URL || "";
+    const rawBaseUrl = process.env.EXPO_PUBLIC_BASE_URL || "";
+    const baseUrl = rawBaseUrl.replace(/\/api\/?$/i, "");
     if (!baseUrl) return;
     const socket = io(baseUrl, {
       transports: ["websocket"],

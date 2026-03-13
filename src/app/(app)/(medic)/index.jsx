@@ -41,6 +41,7 @@ import { useAuthStore } from "@/utils/auth/store";
 import { getFirstName, getTimeGreeting } from "@/utils/greeting";
 import useMedicScope from "@/utils/useMedicScope";
 import MedicScopeSelector from "@/components/MedicScopeSelector";
+import UserAvatar from "@/components/UserAvatar";
 
 const AI_LOCKED_MESSAGE =
   "AI is a premium feature and require to be unlocked for you to use it.";
@@ -54,6 +55,7 @@ export default function MedicHomeScreen() {
   const { profile } = useMedicProfile();
   const { unreadCount } = useNotifications();
   const { auth } = useAuthStore();
+  const avatarUser = { ...(auth?.user || {}), ...(profile || {}) };
   const isWide = screenWidth >= 1024;
   const {
     isSuperAdmin,
@@ -373,71 +375,81 @@ export default function MedicHomeScreen() {
               >
                 {timeGreeting},
               </Text>
-              <Text
-                style={{
-                  fontSize: 24,
-                  fontFamily: "Nunito_700Bold",
-                  color: theme.text,
-                }}
-              >
-                Dr. {firstName}
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                backgroundColor: theme.surface,
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-              onPress={() => router.push("/(app)/(shared)/notifications")}
-            >
-              <Bell color={theme.iconColor} size={20} />
-              {unreadCount > 0 && (
-                <View
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <Text
                   style={{
-                    position: "absolute",
-                    top: -2,
-                    right: -2,
-                    backgroundColor: theme.error,
-                    borderRadius: 10,
-                    minWidth: 18,
-                    height: 18,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    paddingHorizontal: 4,
+                    fontSize: 24,
+                    fontFamily: "Nunito_700Bold",
+                    color: theme.text,
                   }}
                 >
-                  <Text
+                  Dr. {firstName}
+                </Text>
+                <UserAvatar
+                  user={avatarUser}
+                  size={34}
+                  backgroundColor={theme.surface}
+                  borderColor={theme.border}
+                  textColor={theme.textSecondary}
+                />
+              </View>
+            </View>
+
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <TouchableOpacity
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: theme.surface,
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+                onPress={() => router.push("/(app)/(shared)/notifications")}
+              >
+                <Bell color={theme.iconColor} size={20} />
+                {unreadCount > 0 && (
+                  <View
                     style={{
-                      fontSize: 10,
-                      fontFamily: "Inter_600SemiBold",
-                      color: "#FFFFFF",
+                      position: "absolute",
+                      top: -2,
+                      right: -2,
+                      backgroundColor: theme.error,
+                      borderRadius: 10,
+                      minWidth: 18,
+                      height: 18,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      paddingHorizontal: 4,
                     }}
                   >
-                    {unreadCount}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        fontFamily: "Inter_600SemiBold",
+                        color: "#FFFFFF",
+                      }}
+                    >
+                      {unreadCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                backgroundColor: theme.surface,
-                justifyContent: "center",
-                alignItems: "center",
-                marginLeft: 12,
-              }}
-              onPress={() => router.push("/(app)/(shared)/settings")}
-            >
-              <Settings color={theme.iconColor} size={20} />
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: theme.surface,
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+                onPress={() => router.push("/(app)/(shared)/settings")}
+              >
+                <Settings color={theme.iconColor} size={20} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <SubscriptionCountdownBanner

@@ -92,7 +92,8 @@ export const useVideoCall = () => {
 
   useEffect(() => {
     if (!auth?.token || !userId) return;
-    const baseUrl = process.env.EXPO_PUBLIC_BASE_URL || "";
+    const rawBaseUrl = process.env.EXPO_PUBLIC_BASE_URL || "";
+    const baseUrl = rawBaseUrl.replace(/\/api\/?$/i, "");
     if (!baseUrl) return;
     const socket = io(baseUrl, { transports: ["websocket"] });
 
@@ -194,7 +195,7 @@ export const useVideoCall = () => {
         const minutes = callData?.minutes || 30;
         const amount = callData?.amount || Math.ceil(minutes / 30) * 100;
         let paymentId = callData?.paymentId;
-        const paymentMethod = callData?.paymentMethod;
+        const paymentMethod = callData?.paymentMethod || "intasend";
         const currency = callData?.currency || "KES";
 
         if (!isPremium && currentRole !== "SUPER_ADMIN") {
@@ -211,10 +212,6 @@ export const useVideoCall = () => {
             });
             if (!confirmation) return { success: false };
 
-            if (!paymentMethod) {
-              Alert.alert("Select Payment Method", "Choose a payment method to continue.");
-              return { success: false };
-            }
             const payment = await ApiClient.createPayment({
               amount,
               currency,

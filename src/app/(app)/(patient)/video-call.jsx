@@ -2,14 +2,13 @@ import React, { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, TextInput, Platform, Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { ArrowLeft, Video, Phone, CreditCard, Download } from "lucide-react-native";
+import { ArrowLeft, Video, Phone, Download } from "lucide-react-native";
 import { useQuery } from "@tanstack/react-query";
 import DateTimePicker from "@react-native-community/datetimepicker";
 
 import ScreenLayout from "@/components/ScreenLayout";
-import VideoCall from "@/components/VideoCall";
 import { useAppTheme } from "@/components/ThemeProvider";
-import { useVideoCall } from "@/utils/useVideoCall";
+import { useVideoCallContext as useVideoCall } from "@/utils/videoCallContext";
 import apiClient from "@/utils/api";
 import { useI18n } from "@/utils/i18n";
 import { shareCsv } from "@/utils/csvExport";
@@ -27,7 +26,6 @@ export default function VideoCallScreen() {
   const autoAnswer = String(params?.autoAnswer || "") === "1";
   const [minutes, setMinutes] = useState(30);
   const [callMode, setCallMode] = useState("video");
-  const [paymentMethod, setPaymentMethod] = useState(null);
   const [currency, setCurrency] = useState("KES");
   const [filters, setFilters] = useState({
     start: "",
@@ -81,16 +79,7 @@ export default function VideoCallScreen() {
     params?.mode,
   ]);
 
-  const methodsQuery = useQuery({
-    queryKey: ["payment-methods"],
-    queryFn: () => apiClient.getPaymentMethods(),
-  });
-  const methods = methodsQuery.data || [];
-  useEffect(() => {
-    if (!paymentMethod && methods.length > 0) {
-      setPaymentMethod(methods[0]?.id || "intasend");
-    }
-  }, [methods, paymentMethod]);
+  const paymentMethod = "intasend";
   const ratesQuery = useQuery({
     queryKey: ["payment-rates"],
     queryFn: () => apiClient.getPaymentRates(),
@@ -151,7 +140,7 @@ export default function VideoCallScreen() {
         payment.amount,
         payment.method,
         payment.status,
-        payment.type,
+        payment.description || payment.type || "Payment",
         payment.minutes || "",
         payment.createdAt,
       ]),
@@ -165,7 +154,7 @@ export default function VideoCallScreen() {
         "Amount",
         "Method",
         "Status",
-        "Type",
+        "Description",
         "Minutes",
         "Created At",
       ],
@@ -183,7 +172,7 @@ export default function VideoCallScreen() {
         "Amount",
         "Method",
         "Status",
-        "Type",
+        "Description",
         "Minutes",
         "Created At",
       ],
@@ -192,7 +181,7 @@ export default function VideoCallScreen() {
         payment.amount,
         payment.method,
         payment.status,
-        payment.type,
+        payment.description || payment.type || "Payment",
         payment.minutes || "",
         payment.createdAt,
       ]),
@@ -422,39 +411,9 @@ export default function VideoCallScreen() {
 
           {!isPremium && (
             <View style={{ marginTop: 12 }}>
-              <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 8 }}>
-                Payment Method
+              <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                Payment will be processed via IntaSend.
               </Text>
-              {methods.map((method) => (
-                <TouchableOpacity
-                  key={method.id}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    backgroundColor: theme.surface,
-                    borderRadius: 12,
-                    paddingVertical: 8,
-                    paddingHorizontal: 12,
-                    marginBottom: 8,
-                    borderWidth: paymentMethod === method.id ? 2 : 1,
-                    borderColor:
-                      paymentMethod === method.id ? theme.primary : theme.border,
-                  }}
-                  onPress={() => setPaymentMethod(method.id)}
-                >
-                  <CreditCard color={theme.iconColor} size={16} />
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontFamily: "Inter_500Medium",
-                      color: theme.text,
-                      marginLeft: 8,
-                    }}
-                  >
-                    {method.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
             </View>
           )}
           {!isPremium && (
@@ -518,44 +477,6 @@ export default function VideoCallScreen() {
             </Text>
           </TouchableOpacity>
         </View>
-
-        {/* Video Call Overlay moved to RootLayout for global access */}
-        <VideoCall
-          isActive={Boolean(currentCall)}
-          incomingCall={incomingCall}
-          participantName={currentCall?.participantName}
-          participantRole={currentCall?.participantRole}
-          callMode={currentCall?.mode || callMode}
-          callStatus={callStatus}
-          callDuration={callDuration}
-          callType={currentCall?.type || "consultation"}
-          sessionId={currentCall?.sessionId}
-          remoteVideoUrl={currentCall?.remoteVideoUrl}
-          callSession={currentCall?.callSession}
-          isPremium={isPremium}
-          onAcceptCall={() => {
-            if (incomingCall?.sessionId) {
-              answerCall(incomingCall.sessionId, {
-                participantName: incomingCall.participantName,
-                participantRole: incomingCall.participantRole,
-                participantId: incomingCall.participantId,
-                type: incomingCall.type,
-                mode: incomingCall.mode,
-              });
-            }
-          }}
-          onRejectCall={() => {
-            if (incomingCall?.sessionId) {
-              rejectCall(incomingCall.sessionId);
-            }
-          }}
-          onEndCall={() => endCall()}
-          onToggleVideo={toggleVideo}
-          onToggleAudio={toggleAudio}
-          onToggleCamera={toggleCamera}
-          onToggleHold={toggleHold}
-          onRemoteJoined={() => markCallConnected()}
-        />
 
         <View style={{ paddingHorizontal: 24, marginTop: 12 }}>
           <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: theme.text }}>
@@ -943,6 +864,9 @@ export default function VideoCallScreen() {
                     </Text>
                   </View>
                 </View>
+                <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 4 }}>
+                  {payment.description || payment.type || "Payment"}
+                </Text>
                 <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 4 }}>
                   {formatDateTime ? formatDateTime(payment.createdAt) : payment.createdAt}
                 </Text>

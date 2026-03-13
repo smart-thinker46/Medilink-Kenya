@@ -9,7 +9,7 @@ import { ArrowLeft, Calendar, Video, MessageCircle } from "lucide-react-native";
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
 import apiClient from "@/utils/api";
-import { useVideoCall } from "@/utils/useVideoCall";
+import { useVideoCallContext as useVideoCall } from "@/utils/videoCallContext";
 import useMedicScope from "@/utils/useMedicScope";
 import MedicScopeSelector from "@/components/MedicScopeSelector";
 

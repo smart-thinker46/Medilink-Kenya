@@ -36,6 +36,7 @@ export default function MedicTabLayout() {
   ];
 
   const moreLinks = [
+    { key: "online-users", title: "Online Users", href: "/(app)/(shared)/online-users", icon: Users },
     { key: "profile", title: "Profile", href: "/(app)/(medic)/profile", icon: User },
     { key: "chat", title: "Chat", href: "/(app)/(shared)/conversations", icon: MessageCircle },
     { key: "notifications", title: "Notifications", href: "/(app)/(shared)/notifications", icon: Bell },

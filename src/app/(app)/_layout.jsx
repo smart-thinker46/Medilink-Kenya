@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { useAuthStore } from "@/utils/auth/store";
 import { useRouter, useSegments } from "expo-router";
 import { useEffect } from "react";
+import { VideoCallProvider } from "@/utils/videoCallContext";
 
 export default function AppLayout() {
   const { auth } = useAuthStore();
@@ -76,13 +77,15 @@ export default function AppLayout() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(patient)" />
-      <Stack.Screen name="(medic)" />
-      <Stack.Screen name="(hospital)" />
-      <Stack.Screen name="(pharmacy)" />
-      <Stack.Screen name="(admin)" />
-      <Stack.Screen name="(shared)" />
-    </Stack>
+    <VideoCallProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(patient)" />
+        <Stack.Screen name="(medic)" />
+        <Stack.Screen name="(hospital)" />
+        <Stack.Screen name="(pharmacy)" />
+        <Stack.Screen name="(admin)" />
+        <Stack.Screen name="(shared)" />
+      </Stack>
+    </VideoCallProvider>
   );
 }

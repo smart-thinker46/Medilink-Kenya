@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { MotiView } from "moti";
-import { ArrowLeft, Check, X, MapPin, Package, Pill } from "lucide-react-native";
+import { ArrowLeft, Check, X, MapPin, Package, Pill, Heart } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -373,6 +373,38 @@ export default function PharmacyOrdersScreen() {
                       }}
                     >
                       Location
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      backgroundColor: `${theme.primary}12`,
+                      borderRadius: 12,
+                      paddingVertical: 10,
+                      alignItems: "center",
+                      flexDirection: "row",
+                      justifyContent: "center",
+                      borderWidth: 1,
+                      borderColor: `${theme.primary}40`,
+                    }}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/(app)/(shared)/patient-health-hub",
+                        params: { patientId: item.patientId || item.patient_id },
+                      })
+                    }
+                  >
+                    <Heart color={theme.primary} size={16} />
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontFamily: "Inter_600SemiBold",
+                        color: theme.primary,
+                        marginLeft: 6,
+                      }}
+                    >
+                      Health Hub
                     </Text>
                   </TouchableOpacity>
 

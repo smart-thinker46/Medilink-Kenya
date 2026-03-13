@@ -16,3 +16,7 @@ export const registerDeviceToken = async () => {
 export const setupPushHandlers = () => {
   warnOnce();
 };
+
+export const syncBadgeCount = async () => {
+  warnOnce();
+};

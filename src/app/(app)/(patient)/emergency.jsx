@@ -6,9 +6,8 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, MapPin, PhoneCall, Video } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
-import VideoCall from "@/components/VideoCall";
 import { useAppTheme } from "@/components/ThemeProvider";
-import { useVideoCall } from "@/utils/useVideoCall";
+import { useVideoCallContext as useVideoCall } from "@/utils/videoCallContext";
 import { usePatientProfile } from "@/utils/usePatientProfile";
 import apiClient from "@/utils/api";
 import {
@@ -473,41 +472,6 @@ export default function EmergencyScreen() {
             If location is set, nearest medic/hospital are prioritized first.
           </Text>
         </View>
-        <VideoCall
-          isActive={Boolean(currentCall)}
-          incomingCall={incomingCall}
-          participantName={currentCall?.participantName}
-          participantRole={currentCall?.participantRole}
-          callMode={currentCall?.mode || "video"}
-          callStatus={callStatus}
-          callDuration={callDuration}
-          callType={currentCall?.type || "emergency"}
-          sessionId={currentCall?.sessionId}
-          remoteVideoUrl={currentCall?.remoteVideoUrl}
-          callSession={currentCall?.callSession}
-          onAcceptCall={() => {
-            if (incomingCall?.sessionId) {
-              answerCall(incomingCall.sessionId, {
-                participantName: incomingCall.participantName,
-                participantRole: incomingCall.participantRole,
-                participantId: incomingCall.participantId,
-                type: incomingCall.type,
-                mode: incomingCall.mode,
-              });
-            }
-          }}
-          onRejectCall={() => {
-            if (incomingCall?.sessionId) {
-              rejectCall(incomingCall.sessionId);
-            }
-          }}
-          onEndCall={() => endCall()}
-          onToggleVideo={toggleVideo}
-          onToggleAudio={toggleAudio}
-          onToggleCamera={toggleCamera}
-          onToggleHold={toggleHold}
-          onRemoteJoined={() => markCallConnected()}
-        />
       </View>
     </ScreenLayout>
   );

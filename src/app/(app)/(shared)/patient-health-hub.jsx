@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Heart, Shield } from "lucide-react-native";
 
@@ -39,14 +39,20 @@ function Section({ title, children, theme }) {
   );
 }
 
-export default function PatientHealthHubScreen() {
+export default function SharedPatientHealthHubScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const { theme } = useAppTheme();
   const queryClient = useQueryClient();
   const { auth } = useAuthStore();
-  const firstName = getFirstName(auth?.user, "Patient");
-  const patientId = auth?.user?.id;
+  const role = String(auth?.user?.role || "").toUpperCase();
+
+  const patientIdParam = Array.isArray(params?.patientId)
+    ? params.patientId[0]
+    : params?.patientId;
+  const patientId = String(patientIdParam || "").trim();
+  const patientParams = patientId ? { patientId } : {};
 
   const [medicationCheckInput, setMedicationCheckInput] = useState("");
   const [newMedicationName, setNewMedicationName] = useState("");
@@ -54,22 +60,16 @@ export default function PatientHealthHubScreen() {
   const [vitalSystolic, setVitalSystolic] = useState("");
   const [vitalDiastolic, setVitalDiastolic] = useState("");
   const [vitalSugar, setVitalSugar] = useState("");
-  const [timelineFilter, setTimelineFilter] = useState("all");
 
   const patientDashboardQuery = useQuery({
-    queryKey: ["patient-dashboard-insights"],
-    queryFn: () => apiClient.getPatientDashboard(),
-  });
-  const medicalRecordsQuery = useQuery({
-    queryKey: ["medical-records", patientId, "health-hub"],
-    queryFn: () => apiClient.getMedicalRecords(patientId),
-    enabled: Boolean(patientId),
+    queryKey: ["patient-dashboard-insights", patientId || "self"],
+    queryFn: () => apiClient.getPatientDashboard(patientParams),
   });
 
   const addVitalsMutation = useMutation({
-    mutationFn: (payload) => apiClient.addPatientVitals(payload),
+    mutationFn: (payload) => apiClient.addPatientVitals(payload, patientParams),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["patient-dashboard-insights"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-dashboard-insights", patientId || "self"] });
       setVitalSystolic("");
       setVitalDiastolic("");
       setVitalSugar("");
@@ -84,9 +84,9 @@ export default function PatientHealthHubScreen() {
   });
 
   const medicationCheckMutation = useMutation({
-    mutationFn: (payload) => apiClient.checkPatientMedicationSafety(payload),
+    mutationFn: (payload) => apiClient.checkPatientMedicationSafety(payload, patientParams),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["patient-dashboard-insights"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-dashboard-insights", patientId || "self"] });
       if (result?.safe) {
         Alert.alert("Medication Safety", "No critical interactions found.");
       } else {
@@ -99,9 +99,9 @@ export default function PatientHealthHubScreen() {
   });
 
   const createShareMutation = useMutation({
-    mutationFn: () => apiClient.createPatientHealthShare({ scope: "SUMMARY", expiresHours: 24 }),
+    mutationFn: () => apiClient.createPatientHealthShare({ scope: "SUMMARY", expiresHours: 24 }, patientParams),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["patient-dashboard-insights"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-dashboard-insights", patientId || "self"] });
       const share = result?.share || {};
       const tokenPreview = String(share?.token || "").slice(0, 16);
       const apiPath = String(share?.apiPath || share?.link || "").trim();
@@ -116,9 +116,9 @@ export default function PatientHealthHubScreen() {
   });
 
   const addMedicationMutation = useMutation({
-    mutationFn: (payload) => apiClient.addPatientCarePlanMedication(payload),
+    mutationFn: (payload) => apiClient.addPatientCarePlanMedication(payload, patientParams),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["patient-dashboard-insights"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-dashboard-insights", patientId || "self"] });
       setNewMedicationName("");
       setNewMedicationDosage("");
     },
@@ -128,17 +128,17 @@ export default function PatientHealthHubScreen() {
   });
 
   const markTakenMutation = useMutation({
-    mutationFn: (medicationId) => apiClient.markPatientMedicationTaken(medicationId),
+    mutationFn: (medicationId) => apiClient.markPatientMedicationTaken(medicationId, patientParams),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["patient-dashboard-insights"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-dashboard-insights", patientId || "self"] });
     },
     onError: (error) => Alert.alert("Care Plan", error?.message || "Could not update medication."),
   });
 
   const markMissedMutation = useMutation({
-    mutationFn: (medicationId) => apiClient.markPatientMedicationMissed(medicationId),
+    mutationFn: (medicationId) => apiClient.markPatientMedicationMissed(medicationId, patientParams),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["patient-dashboard-insights"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-dashboard-insights", patientId || "self"] });
     },
     onError: (error) => Alert.alert("Care Plan", error?.message || "Could not update medication."),
   });
@@ -156,22 +156,15 @@ export default function PatientHealthHubScreen() {
   const adherence = patientInsights.adherence || {};
   const preventiveReminders = patientInsights.preventiveReminders || [];
   const criticalAlerts = patientInsights.criticalAlerts || [];
-  const medicalRecords = medicalRecordsQuery.data?.items || medicalRecordsQuery.data || [];
-  const timelineFilters = [
-    { id: "all", label: "All", types: null },
-    { id: "records", label: "Records", types: ["MEDICAL_RECORD"] },
-    { id: "appointments", label: "Appointments", types: ["APPOINTMENT"] },
-    { id: "orders", label: "Orders", types: ["PHARMACY_ORDER"] },
-    { id: "payments", label: "Payments", types: ["PAYMENT"] },
-  ];
-  const filteredTimeline =
-    timelineFilter === "all"
-      ? timeline
-      : timeline.filter((event) =>
-          (timelineFilters.find((item) => item.id === timelineFilter)?.types || []).includes(
-            String(event?.type || "").toUpperCase(),
-          ),
-        );
+
+  const headerName = useMemo(() => {
+    const rawName = String(emergencyCard?.fullName || "").trim();
+    if (rawName) return rawName;
+    return getFirstName(auth?.user, "Patient");
+  }, [emergencyCard?.fullName, auth?.user]);
+
+  const canShare = role === "PATIENT" || role === "SUPER_ADMIN";
+  const isEditingOther = Boolean(patientId) && role !== "PATIENT";
 
   return (
     <ScreenLayout>
@@ -206,11 +199,29 @@ export default function PatientHealthHubScreen() {
             </TouchableOpacity>
             <View>
               <Text style={{ color: theme.text, fontSize: 22, fontFamily: "Nunito_700Bold" }}>Health Hub</Text>
-              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{firstName}</Text>
+              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{headerName}</Text>
             </View>
           </View>
           <Heart size={20} color={theme.primary} />
         </View>
+
+        {isEditingOther && (
+          <View
+            style={{
+              marginHorizontal: 24,
+              marginBottom: 18,
+              backgroundColor: `${theme.primary}12`,
+              borderRadius: 12,
+              padding: 12,
+              borderWidth: 1,
+              borderColor: `${theme.primary}33`,
+            }}
+          >
+            <Text style={{ color: theme.text, fontSize: 12 }}>
+              Editing Health Hub for {headerName}.
+            </Text>
+          </View>
+        )}
 
         <Section title="My Care Plan" theme={theme}>
           <Text style={{ fontSize: 13, color: theme.textSecondary, marginBottom: 8 }}>
@@ -245,7 +256,7 @@ export default function PatientHealthHubScreen() {
             </View>
           ))}
           {(!carePlan?.medications || carePlan.medications.length === 0) && (
-            <Text style={{ color: theme.textSecondary, fontSize: 12, marginBottom: 8 }}>No medications in your plan yet.</Text>
+            <Text style={{ color: theme.textSecondary, fontSize: 12, marginBottom: 8 }}>No medications in this plan yet.</Text>
           )}
           <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
             <TextInput
@@ -340,7 +351,7 @@ export default function PatientHealthHubScreen() {
         </Section>
 
         <Section title="Emergency Card" theme={theme}>
-          <Text style={{ color: theme.text, fontSize: 14, fontFamily: "Inter_600SemiBold" }}>{emergencyCard?.fullName || firstName}</Text>
+          <Text style={{ color: theme.text, fontSize: 14, fontFamily: "Inter_600SemiBold" }}>{emergencyCard?.fullName || headerName}</Text>
           <Text style={{ color: theme.textSecondary, fontSize: 12 }}>Blood Group: {emergencyCard?.bloodGroup || "Not set"}</Text>
           <Text style={{ color: theme.textSecondary, fontSize: 12 }}>Allergies: {emergencyCard?.allergies || "Not set"}</Text>
           <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
@@ -419,108 +430,34 @@ export default function PatientHealthHubScreen() {
           )}
         </Section>
 
-        <Section title="Health Records" theme={theme}>
-          {medicalRecords.length === 0 ? (
-            <Text style={{ color: theme.textSecondary, fontSize: 12 }}>No medical records yet.</Text>
-          ) : (
-            medicalRecords.slice(0, 4).map((record) => (
-              <View key={record.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.border }}>
-                <Text style={{ color: theme.text, fontSize: 13, fontFamily: "Inter_600SemiBold" }}>
-                  {(record.type || "record").toString().replace(/_/g, " ").toUpperCase()}
-                </Text>
-                <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
-                  {record.notes || record.condition || "Medical update recorded."}
-                </Text>
-                <Text style={{ color: theme.textTertiary, fontSize: 11 }}>
-                  {record.medic?.fullName || "Medic"} •{" "}
-                  {new Date(record.createdAt || Date.now()).toLocaleDateString()}
-                </Text>
-              </View>
-            ))
-          )}
-          <TouchableOpacity
-            onPress={() => router.push("/(app)/(patient)/medical-history")}
-            style={{ marginTop: 10, alignSelf: "flex-start" }}
-          >
-            <Text style={{ color: theme.primary, fontSize: 12, fontFamily: "Inter_600SemiBold" }}>
-              View all medical records
-            </Text>
-          </TouchableOpacity>
-        </Section>
-
         <Section title="Visit Timeline" theme={theme}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              {timelineFilters.map((filter) => {
-                const active = timelineFilter === filter.id;
-                return (
-                  <TouchableOpacity
-                    key={filter.id}
-                    onPress={() => setTimelineFilter(filter.id)}
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 6,
-                      borderRadius: 999,
-                      backgroundColor: active ? theme.primary : theme.surface,
-                      borderWidth: 1,
-                      borderColor: active ? theme.primary : theme.border,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: active ? "#fff" : theme.textSecondary,
-                        fontSize: 11,
-                        fontFamily: "Inter_600SemiBold",
-                      }}
-                    >
-                      {filter.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+          {timeline.slice(0, 5).map((event) => (
+            <View key={event.id} style={{ paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: theme.border }}>
+              <Text style={{ color: theme.text, fontSize: 13, fontFamily: "Inter_600SemiBold" }}>{event.title}</Text>
+              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{event.detail}</Text>
+              <Text style={{ color: theme.textTertiary, fontSize: 11 }}>{new Date(event.date || Date.now()).toLocaleString()}</Text>
             </View>
-          </ScrollView>
-          {filteredTimeline.length === 0 ? (
-            <Text style={{ color: theme.textSecondary, fontSize: 12 }}>No timeline entries yet.</Text>
-          ) : (
-            filteredTimeline.slice(0, 5).map((event) => {
-            const isRecord = String(event?.type || "").toUpperCase() === "MEDICAL_RECORD";
-            const recordType = (event?.recordType || event?.title || "Medical Record")
-              .toString()
-              .replace(/_/g, " ")
-              .trim();
-            const medicName = event?.medicName || "Medic";
-            return (
-              <View key={event.id} style={{ paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: theme.border }}>
-                <Text style={{ color: theme.text, fontSize: 13, fontFamily: "Inter_600SemiBold" }}>
-                  {isRecord ? `${recordType} • ${medicName}` : event.title}
-                </Text>
-                <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{event.detail}</Text>
-                <Text style={{ color: theme.textTertiary, fontSize: 11 }}>
-                  {new Date(event.date || Date.now()).toLocaleString()}
-                </Text>
-              </View>
-            );
-          })
-          )}
+          ))}
         </Section>
 
-        <Section title="Secure Health Share" theme={theme}>
-          <TouchableOpacity
-            onPress={() => createShareMutation.mutate()}
-            style={{ backgroundColor: theme.primary, borderRadius: 10, paddingVertical: 10, alignItems: "center", marginBottom: 10 }}
-          >
-            <Text style={{ color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" }}>Generate 24h Share Link</Text>
-          </TouchableOpacity>
-          {(healthShare?.activeLinks || []).slice(0, 3).map((share) => (
-            <Text key={share.id} style={{ color: theme.textSecondary, fontSize: 12, marginBottom: 4 }}>
-              Token: {String(share.token || "").slice(0, 12)}... • Expires {new Date(share.expiresAt || Date.now()).toLocaleString()}
-            </Text>
-          ))}
-          {(healthShare?.activeLinks || []).length === 0 && (
-            <Text style={{ color: theme.textSecondary, fontSize: 12 }}>No active share links.</Text>
-          )}
-        </Section>
+        {canShare && (
+          <Section title="Secure Health Share" theme={theme}>
+            <TouchableOpacity
+              onPress={() => createShareMutation.mutate()}
+              style={{ backgroundColor: theme.primary, borderRadius: 10, paddingVertical: 10, alignItems: "center", marginBottom: 10 }}
+            >
+              <Text style={{ color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" }}>Generate 24h Share Link</Text>
+            </TouchableOpacity>
+            {(healthShare?.activeLinks || []).slice(0, 3).map((share) => (
+              <Text key={share.id} style={{ color: theme.textSecondary, fontSize: 12, marginBottom: 4 }}>
+                Token: {String(share.token || "").slice(0, 12)}... • Expires {new Date(share.expiresAt || Date.now()).toLocaleString()}
+              </Text>
+            ))}
+            {(healthShare?.activeLinks || []).length === 0 && (
+              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>No active share links.</Text>
+            )}
+          </Section>
+        )}
 
         <Section title="Care Team" theme={theme}>
           <Text style={{ color: theme.textSecondary, fontSize: 12 }}>

@@ -19,17 +19,18 @@ import {
   Calendar,
   Video,
   MessageCircle,
+  Lock,
 } from "lucide-react-native";
 import { Picker } from "@react-native-picker/picker";
 
 import ScreenLayout from "@/components/ScreenLayout";
-import VideoCall from "@/components/VideoCall";
 import { useAppTheme } from "@/components/ThemeProvider";
 import apiClient from "@/utils/api";
 import { usePatientProfile } from "@/utils/usePatientProfile";
 import { getProfileCompletion } from "@/utils/profileCompletion";
-import { useVideoCall } from "@/utils/useVideoCall";
+import { useVideoCallContext as useVideoCall } from "@/utils/videoCallContext";
 import { useOnlineUsers } from "@/utils/useOnlineUsers";
+import UserAvatar from "@/components/UserAvatar";
 
 export default function SearchMedicsScreen() {
   const router = useRouter();
@@ -85,8 +86,23 @@ export default function SearchMedicsScreen() {
       });
     },
   });
+  const appointmentsQuery = useQuery({
+    queryKey: ["appointments", "patient-chat-access"],
+    queryFn: () => apiClient.getAppointments(),
+  });
 
   const medics = medicsQuery.data?.items || medicsQuery.data || [];
+  const bookedMedicIds = useMemo(() => {
+    const items = appointmentsQuery.data?.items || appointmentsQuery.data || [];
+    const ids = new Set();
+    items.forEach((appt) => {
+      const status = String(appt?.status || "").toLowerCase();
+      if (status === "cancelled" || status === "canceled") return;
+      const medicId = appt?.medicId || appt?.medic_id;
+      if (medicId) ids.add(String(medicId));
+    });
+    return ids;
+  }, [appointmentsQuery.data]);
 
   const filteredMedics = useMemo(() => {
     const experienceRanges = {
@@ -397,27 +413,14 @@ export default function SearchMedicsScreen() {
                   }}
                 >
                   <View style={{ flexDirection: "row", alignItems: "center" }}>
-                    <View
-                      style={{
-                        width: 52,
-                        height: 52,
-                        borderRadius: 26,
-                        backgroundColor: theme.surface,
-                        justifyContent: "center",
-                        alignItems: "center",
-                        marginRight: 12,
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 18,
-                          fontFamily: "Inter_700Bold",
-                          color: theme.primary,
-                        }}
-                      >
-                        {medic.firstName?.[0] || medic.name?.[0] || "M"}
-                      </Text>
-                    </View>
+                    <UserAvatar
+                      user={medic}
+                      size={52}
+                      backgroundColor={theme.surface}
+                      borderColor={theme.border}
+                      textColor={theme.primary}
+                      textStyle={{ fontFamily: "Inter_700Bold" }}
+                    />
 
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -492,37 +495,70 @@ export default function SearchMedicsScreen() {
                         >
                           {medic.location || "Nearby"}
                         </Text>
+                        <Text
+                          style={{
+                            marginLeft: 12,
+                            fontSize: 12,
+                            fontFamily: "Inter_600SemiBold",
+                            color: theme.primary,
+                          }}
+                        >
+                          KES{" "}
+                          {Number(
+                            medic.consultationFee ?? medic.fee ?? 0,
+                          ).toLocaleString()}
+                        </Text>
                       </View>
                     </View>
                   </View>
 
                   <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
-                    <TouchableOpacity
-                      style={{
-                        flex: 1,
-                        backgroundColor: theme.surface,
-                        borderRadius: 12,
-                        paddingVertical: 10,
-                        alignItems: "center",
-                        flexDirection: "row",
-                        justifyContent: "center",
-                      }}
-                      onPress={() =>
-                        router.push(`/(app)/(patient)/chat?medicId=${medic.id || ""}`)
-                      }
-                    >
-                      <MessageCircle color={theme.textSecondary} size={16} />
-                      <Text
-                        style={{
-                          fontSize: 13,
-                          fontFamily: "Inter_500Medium",
-                          color: theme.textSecondary,
-                          marginLeft: 6,
-                        }}
-                      >
-                        Chat
-                      </Text>
-                    </TouchableOpacity>
+                    {(() => {
+                      const targetId = String(medic.id || medic.medicId || "");
+                      const canChat = targetId && bookedMedicIds.has(targetId);
+                      return (
+                        <TouchableOpacity
+                          style={{
+                            flex: 1,
+                            backgroundColor: theme.surface,
+                            borderRadius: 12,
+                            paddingVertical: 10,
+                            alignItems: "center",
+                            flexDirection: "row",
+                            justifyContent: "center",
+                            opacity: canChat ? 1 : 0.6,
+                            borderWidth: canChat ? 0 : 1,
+                            borderColor: canChat ? "transparent" : theme.border,
+                          }}
+                          onPress={() => {
+                            if (!canChat) {
+                              Alert.alert(
+                                "Chat Locked",
+                                "Book an appointment with this medic to unlock chat.",
+                              );
+                              return;
+                            }
+                            router.push(`/(app)/(patient)/chat?medicId=${targetId}`);
+                          }}
+                        >
+                          {canChat ? (
+                            <MessageCircle color={theme.textSecondary} size={16} />
+                          ) : (
+                            <Lock color={theme.textSecondary} size={16} />
+                          )}
+                          <Text
+                            style={{
+                              fontSize: 13,
+                              fontFamily: "Inter_500Medium",
+                              color: theme.textSecondary,
+                              marginLeft: 6,
+                            }}
+                          >
+                            {canChat ? "Chat" : "Chat Locked"}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })()}
 
                     <TouchableOpacity
                       style={{
@@ -622,41 +658,6 @@ export default function SearchMedicsScreen() {
             ))
           )}
         </ScrollView>
-        <VideoCall
-          isActive={Boolean(currentCall)}
-          incomingCall={incomingCall}
-          participantName={currentCall?.participantName}
-          participantRole={currentCall?.participantRole}
-          callMode={currentCall?.mode || "video"}
-          callStatus={callStatus}
-          callDuration={callDuration}
-          callType={currentCall?.type || "consultation"}
-          sessionId={currentCall?.sessionId}
-          remoteVideoUrl={currentCall?.remoteVideoUrl}
-          callSession={currentCall?.callSession}
-          onAcceptCall={() => {
-            if (incomingCall?.sessionId) {
-              answerCall(incomingCall.sessionId, {
-                participantName: incomingCall.participantName,
-                participantRole: incomingCall.participantRole,
-                participantId: incomingCall.participantId,
-                type: incomingCall.type,
-                mode: incomingCall.mode,
-              });
-            }
-          }}
-          onRejectCall={() => {
-            if (incomingCall?.sessionId) {
-              rejectCall(incomingCall.sessionId);
-            }
-          }}
-          onEndCall={() => endCall()}
-          onToggleVideo={toggleVideo}
-          onToggleAudio={toggleAudio}
-          onToggleCamera={toggleCamera}
-          onToggleHold={toggleHold}
-          onRemoteJoined={() => markCallConnected()}
-        />
       </View>
     </ScreenLayout>
   );

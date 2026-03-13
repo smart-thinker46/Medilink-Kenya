@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, ActivityIndicator, Switch } from "react-native";
+import { View, Text, TouchableOpacity, ActivityIndicator, Switch, TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
@@ -42,6 +42,7 @@ export default function NearbyMapScreen() {
   const [showHospitals, setShowHospitals] = useState(true);
   const [nearbyOnly, setNearbyOnly] = useState(true);
   const [availableOnly, setAvailableOnly] = useState(true);
+  const [serviceQuery, setServiceQuery] = useState("");
 
   const effectiveLiveUpdates = liveUpdates && !batterySaver;
   const effectiveInterval = refreshInterval || 15000;
@@ -56,10 +57,11 @@ export default function NearbyMapScreen() {
     refetchInterval: effectiveLiveUpdates ? effectiveInterval : false,
   });
   const discoveryQuery = useQuery({
-    queryKey: ["map-discovery", "nearby-map"],
+    queryKey: ["map-discovery", "nearby-map", serviceQuery],
     queryFn: () =>
       apiClient.getMapDiscovery({
         include: "medic,pharmacy,hospital",
+        service: serviceQuery.trim() || undefined,
       }),
     refetchInterval: effectiveLiveUpdates ? effectiveInterval : false,
   });
@@ -398,6 +400,29 @@ export default function NearbyMapScreen() {
               </TouchableOpacity>
             ))}
           </View>
+        </View>
+
+        <View style={{ paddingHorizontal: 24, marginBottom: 10 }}>
+          <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+            Search hospital services
+          </Text>
+          <TextInput
+            placeholder="e.g. maternity, radiology, dialysis"
+            placeholderTextColor={theme.textSecondary}
+            value={serviceQuery}
+            onChangeText={setServiceQuery}
+            style={{
+              marginTop: 8,
+              backgroundColor: theme.surface,
+              borderColor: theme.border,
+              borderWidth: 1,
+              borderRadius: 12,
+              paddingHorizontal: 12,
+              paddingVertical: 9,
+              color: theme.text,
+              fontFamily: "Inter_400Regular",
+            }}
+          />
         </View>
 
         <View style={{ paddingHorizontal: 24, marginBottom: 10, flexDirection: "row", gap: 8, flexWrap: "wrap" }}>

@@ -14,6 +14,8 @@ import {
   Bell,
   PieChart,
   LayoutDashboard,
+  ClipboardList,
+  Heart,
 } from "lucide-react-native";
 import ResponsiveTabBar from "@/components/ResponsiveTabBar";
 import { useNotifications } from "@/utils/useNotifications";
@@ -40,7 +42,10 @@ export default function HospitalTabLayout() {
     ...(isSuperAdmin
       ? [{ key: "back-admin", title: "Back to Admin", href: "/(app)/(admin)", icon: LayoutDashboard }]
       : []),
+    { key: "online-users", title: "Online Users", href: "/(app)/(shared)/online-users", icon: Users },
+    { key: "health-hub", title: "Health Hub", href: "/(app)/(shared)/patient-health-hub-picker", icon: Heart },
     { key: "profile", title: "Profile", href: "/(app)/(hospital)/profile", icon: Building2 },
+    { key: "services", title: "Services", href: "/(app)/(hospital)/services", icon: ClipboardList },
     { key: "chat", title: "Chat", href: "/(app)/(shared)/conversations", icon: MessageCircle },
     { key: "notifications", title: "Notifications", href: "/(app)/(shared)/notifications", icon: Bell },
     { key: "video", title: "Video", href: "/(app)/(hospital)/video-call", icon: Video },
@@ -135,6 +140,7 @@ export default function HospitalTabLayout() {
       <Tabs.Screen name="job-create" options={{ href: null }} />
       <Tabs.Screen name="shift-create" options={{ href: null }} />
       <Tabs.Screen name="edit-profile" options={{ href: null }} />
+      <Tabs.Screen name="services" options={{ href: null }} />
     </Tabs>
   );
 }

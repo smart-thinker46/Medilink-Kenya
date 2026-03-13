@@ -14,7 +14,7 @@ const defaultPlanMatrix = [
   { role: "MEDIC", monthly: 300, yearly: 4800 },
   { role: "PHARMACY_ADMIN", monthly: 500, yearly: 10000 },
   { role: "HOSPITAL_ADMIN", monthly: 1000, yearly: 12000 },
-  { role: "PATIENT", monthly: 0, yearly: 0 },
+  { role: "PATIENT", monthly: 100, yearly: 1200 },
 ];
 
 export default function AdminSubscriptionsScreen() {

@@ -10,7 +10,6 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MessageCircle, ArrowLeft, Search, Sparkles } from "lucide-react-native";
-import { Image } from "react-native";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useFocusEffect } from "@react-navigation/native";
 
@@ -21,6 +20,7 @@ import { useAuthStore } from "@/utils/auth/store";
 import apiClient from "@/utils/api";
 import { useI18n } from "@/utils/i18n";
 import { useOnlineUsers } from "@/utils/useOnlineUsers";
+import UserAvatar from "@/components/UserAvatar";
 
 export default function ConversationsScreen() {
   const router = useRouter();
@@ -299,18 +299,13 @@ export default function ConversationsScreen() {
                     marginRight: 12,
                   }}
                 >
-                  {item.user?.avatarUrl ? (
-                    <Image
-                      source={{
-                        uri: item.user.avatarUrl.startsWith("http")
-                          ? item.user.avatarUrl
-                          : `${process.env.EXPO_PUBLIC_BASE_URL || ""}${item.user.avatarUrl}`,
-                      }}
-                      style={{ width: 44, height: 44, borderRadius: 22 }}
-                    />
-                  ) : (
-                    <MessageCircle color={theme.primary} size={20} />
-                  )}
+                  <UserAvatar
+                    user={item.user}
+                    size={44}
+                    backgroundColor={theme.surface}
+                    borderColor={theme.border}
+                    textColor={theme.textSecondary}
+                  />
                 </View>
                 <View style={{ flex: 1 }}>
                   <View
