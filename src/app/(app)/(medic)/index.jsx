@@ -287,63 +287,65 @@ export default function MedicHomeScreen() {
             >
               Medic Menu
             </Text>
-            {visibleSidebarLinks.map((link) => {
-              const Icon = link.icon;
-              const active = pathname === link.href;
-              const showBadge = link.key === "notifications" && unreadCount > 0;
-              return (
-                <TouchableOpacity
-                  key={link.key}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    paddingVertical: 10,
-                    paddingHorizontal: 12,
-                    borderRadius: 12,
-                    marginBottom: 6,
-                    backgroundColor: active ? theme.surface : "transparent",
-                  }}
-                  onPress={() => (link.key === "ai-finder" ? openAiFinder() : router.push(link.href))}
-                  activeOpacity={0.8}
-                >
-                  <Icon color={active ? theme.primary : theme.iconColor} size={18} />
-                  <Text
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {visibleSidebarLinks.map((link) => {
+                const Icon = link.icon;
+                const active = pathname === link.href;
+                const showBadge = link.key === "notifications" && unreadCount > 0;
+                return (
+                  <TouchableOpacity
+                    key={link.key}
                     style={{
-                      fontSize: 14,
-                      fontFamily: "Inter_600SemiBold",
-                      color: active ? theme.primary : theme.text,
-                      marginLeft: 12,
-                      flex: 1,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingVertical: 10,
+                      paddingHorizontal: 12,
+                      borderRadius: 12,
+                      marginBottom: 6,
+                      backgroundColor: active ? theme.surface : "transparent",
                     }}
+                    onPress={() => (link.key === "ai-finder" ? openAiFinder() : router.push(link.href))}
+                    activeOpacity={0.8}
                   >
-                    {link.title}
-                  </Text>
-                  {showBadge && (
-                    <View
+                    <Icon color={active ? theme.primary : theme.iconColor} size={18} />
+                    <Text
                       style={{
-                        minWidth: 20,
-                        height: 20,
-                        borderRadius: 10,
-                        backgroundColor: theme.error,
-                        paddingHorizontal: 6,
-                        alignItems: "center",
-                        justifyContent: "center",
+                        fontSize: 14,
+                        fontFamily: "Inter_600SemiBold",
+                        color: active ? theme.primary : theme.text,
+                        marginLeft: 12,
+                        flex: 1,
                       }}
                     >
-                      <Text
+                      {link.title}
+                    </Text>
+                    {showBadge && (
+                      <View
                         style={{
-                          fontSize: 10,
-                          fontFamily: "Inter_700Bold",
-                          color: "#FFFFFF",
+                          minWidth: 20,
+                          height: 20,
+                          borderRadius: 10,
+                          backgroundColor: theme.error,
+                          paddingHorizontal: 6,
+                          alignItems: "center",
+                          justifyContent: "center",
                         }}
                       >
-                        {unreadCount > 99 ? "99+" : unreadCount}
-                      </Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
+                        <Text
+                          style={{
+                            fontSize: 10,
+                            fontFamily: "Inter_700Bold",
+                            color: "#FFFFFF",
+                          }}
+                        >
+                          {unreadCount > 99 ? "99+" : unreadCount}
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </View>
         )}
         <ScrollView

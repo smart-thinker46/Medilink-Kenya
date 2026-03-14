@@ -16,6 +16,7 @@ import {
   Briefcase,
   Users,
   Calendar,
+  Clock,
   PieChart,
   CreditCard,
   Pill,
@@ -32,6 +33,7 @@ import {
   Package,
   Sparkles,
   LayoutDashboard,
+  ClipboardList,
 } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
@@ -87,6 +89,25 @@ export default function HospitalHomeScreen() {
 
   const jobs = jobsQuery.data || [];
   const shifts = shiftsQuery.data || [];
+  const applicantIds = useMemo(() => {
+    const ids = new Set();
+    const jobItems = jobsQuery.data?.items || jobsQuery.data || [];
+    const shiftItems = shiftsQuery.data?.items || shiftsQuery.data || [];
+    jobItems.forEach((job) => {
+      const apps = Array.isArray(job?.applications) ? job.applications : [];
+      apps.forEach((app) => {
+        if (app?.medicId) ids.add(String(app.medicId));
+      });
+    });
+    shiftItems.forEach((shift) => {
+      const apps = Array.isArray(shift?.applications) ? shift.applications : [];
+      apps.forEach((app) => {
+        if (app?.medicId) ids.add(String(app.medicId));
+      });
+    });
+    return Array.from(ids);
+  }, [jobsQuery.data, shiftsQuery.data]);
+  const applicantCount = applicantIds.length;
   const appointmentRequests = appointmentsQuery.data?.items || appointmentsQuery.data || [];
   const medics = medicsQuery.data?.items || medicsQuery.data || [];
   const linkedPatientId = appointmentRequests[0]?.patientId || appointmentRequests[0]?.patient_id || "";
@@ -122,14 +143,6 @@ export default function HospitalHomeScreen() {
 
   const quickActions = [
     {
-      id: "create-shift",
-      title: "Create Shift",
-      description: "Post shift opportunities",
-      icon: Plus,
-      color: theme.primary,
-      onPress: () => handleProtectedAction(() => router.push("/(app)/(hospital)/shift-create")),
-    },
-    {
       id: "post-job",
       title: "Post Job",
       description: "Publish hiring opportunities",
@@ -138,11 +151,28 @@ export default function HospitalHomeScreen() {
       onPress: () => handleProtectedAction(() => router.push("/(app)/(hospital)/job-create")),
     },
     {
+      id: "create-shift",
+      title: "Create Shift",
+      description: "Schedule medic shifts",
+      icon: Clock,
+      color: theme.info,
+      onPress: () => handleProtectedAction(() => router.push("/(app)/(hospital)/shift-create")),
+    },
+    {
+      id: "services",
+      title: "Hospital Services",
+      description: "List services for discovery",
+      icon: ClipboardList,
+      color: theme.accent,
+      onPress: () => handleProtectedAction(() => router.push("/(app)/(hospital)/services")),
+    },
+    {
       id: "review-medics",
       title: "Review Medics",
       description: "Approve applications",
       icon: Users,
       color: theme.accent,
+      badge: applicantCount,
       onPress: () => handleProtectedAction(() => router.push("/(app)/(hospital)/medics")),
     },
     {
@@ -175,10 +205,11 @@ export default function HospitalHomeScreen() {
       ? [{ key: "back-admin", title: "Back to Admin", href: "/(app)/(admin)", icon: LayoutDashboard }]
       : []),
     { key: "dashboard", title: "Dashboard", href: "/(app)/(hospital)", icon: Home },
-    { key: "shifts", title: "Shifts", href: "/(app)/(hospital)/shifts", icon: Briefcase },
+    { key: "staffing", title: "Staffing", href: "/(app)/(hospital)/staffing", icon: Briefcase },
     { key: "jobs", title: "Jobs", href: "/(app)/(hospital)/jobs", icon: Briefcase },
     { key: "medics", title: "Medics", href: "/(app)/(hospital)/medics", icon: Users },
     { key: "appointments", title: "Appointments", href: "/(app)/(hospital)/appointments", icon: Calendar },
+    { key: "services", title: "Services", href: "/(app)/(hospital)/services", icon: ClipboardList },
     { key: "pharmacy", title: "Pharmacy", href: "/(app)/(hospital)/pharmacy", icon: Pill },
     { key: "ai-finder", title: "AI Finder", href: "/(app)/(shared)/ai-finder", icon: Sparkles },
     { key: "analytics", title: "Analytics", href: "/(app)/(hospital)/analytics", icon: PieChart },
@@ -215,63 +246,65 @@ export default function HospitalHomeScreen() {
             >
               Hospital Menu
             </Text>
-            {sidebarLinks.map((link) => {
-              const Icon = link.icon;
-              const active = pathname === link.href;
-              const showBadge = link.key === "notifications" && unreadCount > 0;
-              return (
-                <TouchableOpacity
-                  key={link.key}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    paddingVertical: 10,
-                    paddingHorizontal: 12,
-                    borderRadius: 12,
-                    marginBottom: 6,
-                    backgroundColor: active ? theme.surface : "transparent",
-                  }}
-                  onPress={() => router.push(link.href)}
-                  activeOpacity={0.8}
-                >
-                  <Icon color={active ? theme.primary : theme.iconColor} size={18} />
-                  <Text
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {sidebarLinks.map((link) => {
+                const Icon = link.icon;
+                const active = pathname === link.href;
+                const showBadge = link.key === "notifications" && unreadCount > 0;
+                return (
+                  <TouchableOpacity
+                    key={link.key}
                     style={{
-                      fontSize: 14,
-                      fontFamily: "Inter_600SemiBold",
-                      color: active ? theme.primary : theme.text,
-                      marginLeft: 12,
-                      flex: 1,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingVertical: 10,
+                      paddingHorizontal: 12,
+                      borderRadius: 12,
+                      marginBottom: 6,
+                      backgroundColor: active ? theme.surface : "transparent",
                     }}
+                    onPress={() => router.push(link.href)}
+                    activeOpacity={0.8}
                   >
-                    {link.title}
-                  </Text>
-                  {showBadge && (
-                    <View
+                    <Icon color={active ? theme.primary : theme.iconColor} size={18} />
+                    <Text
                       style={{
-                        minWidth: 20,
-                        height: 20,
-                        borderRadius: 10,
-                        backgroundColor: theme.error,
-                        paddingHorizontal: 6,
-                        alignItems: "center",
-                        justifyContent: "center",
+                        fontSize: 14,
+                        fontFamily: "Inter_600SemiBold",
+                        color: active ? theme.primary : theme.text,
+                        marginLeft: 12,
+                        flex: 1,
                       }}
                     >
-                      <Text
+                      {link.title}
+                    </Text>
+                    {showBadge && (
+                      <View
                         style={{
-                          fontSize: 10,
-                          fontFamily: "Inter_700Bold",
-                          color: "#FFFFFF",
+                          minWidth: 20,
+                          height: 20,
+                          borderRadius: 10,
+                          backgroundColor: theme.error,
+                          paddingHorizontal: 6,
+                          alignItems: "center",
+                          justifyContent: "center",
                         }}
                       >
-                        {unreadCount > 99 ? "99+" : unreadCount}
-                      </Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
+                        <Text
+                          style={{
+                            fontSize: 10,
+                            fontFamily: "Inter_700Bold",
+                            color: "#FFFFFF",
+                          }}
+                        >
+                          {unreadCount > 99 ? "99+" : unreadCount}
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </View>
         )}
         <ScrollView
@@ -778,10 +811,36 @@ export default function HospitalHomeScreen() {
                     shadowOpacity: isDark ? 0.3 : 0.1,
                     shadowRadius: 8,
                     elevation: 4,
+                    position: "relative",
                   }}
                   onPress={action.onPress}
                   activeOpacity={0.8}
                 >
+                  {action.badge ? (
+                    <View
+                      style={{
+                        position: "absolute",
+                        top: 12,
+                        right: 12,
+                        backgroundColor: theme.primary,
+                        borderRadius: 999,
+                        paddingHorizontal: 8,
+                        paddingVertical: 2,
+                        borderWidth: 1,
+                        borderColor: `${theme.primary}55`,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 10,
+                          fontFamily: "Inter_700Bold",
+                          color: "#fff",
+                        }}
+                      >
+                        {action.badge}
+                      </Text>
+                    </View>
+                  ) : null}
                   <View
                     style={{
                       width: 48,

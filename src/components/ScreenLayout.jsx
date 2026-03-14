@@ -1,14 +1,20 @@
 import React from "react";
-import { View, Text, TouchableOpacity } from "react-native";
+import { View, Text, TouchableOpacity, Platform } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useAppTheme } from "./ThemeProvider";
 import { useAuthStore } from "@/utils/auth/store";
+import { useRouter } from "expo-router";
+import { ArrowLeft } from "lucide-react-native";
 
-export default function ScreenLayout({ children, style }) {
+export default function ScreenLayout({ children, style, showWebBack = false }) {
   const { theme, colorScheme } = useAppTheme();
   const { auth, setAuth } = useAuthStore();
+  const router = useRouter();
   const isBlocked =
     auth?.user?.status === "suspended" || Boolean(auth?.user?.blocked);
+  const isWeb = Platform.OS === "web";
+  const canGoBack =
+    isWeb && typeof window !== "undefined" ? window.history.length > 1 : false;
 
   return (
     <View
@@ -27,8 +33,38 @@ export default function ScreenLayout({ children, style }) {
           width: "100%",
           maxWidth: 1200,
           alignSelf: "center",
+          position: "relative",
         }}
       >
+        {isWeb && showWebBack && canGoBack && (
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={{
+              position: "absolute",
+              top: 12,
+              left: 12,
+              zIndex: 20,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              backgroundColor: theme.card,
+              borderRadius: 999,
+              paddingVertical: 6,
+              paddingHorizontal: 10,
+              borderWidth: 1,
+              borderColor: theme.border,
+              shadowColor: "#000",
+              shadowOpacity: 0.08,
+              shadowRadius: 6,
+              shadowOffset: { width: 0, height: 2 },
+            }}
+          >
+            <ArrowLeft color={theme.text} size={16} />
+            <Text style={{ color: theme.text, fontSize: 12, fontFamily: "Inter_600SemiBold" }}>
+              Back
+            </Text>
+          </TouchableOpacity>
+        )}
         {children}
       </View>
       {isBlocked && (

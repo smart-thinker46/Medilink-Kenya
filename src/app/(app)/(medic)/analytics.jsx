@@ -138,6 +138,16 @@ export default function MedicAnalyticsScreen() {
               { label: "Pending", value: analyticsCharts?.finance?.pending || 0, color: theme.warning },
             ]}
           />
+          <Donut
+            title="Appointments"
+            theme={theme}
+            data={[
+              { label: "Confirmed", value: analyticsCharts?.appointments?.confirmed || 0, color: theme.success },
+              { label: "Pending", value: analyticsCharts?.appointments?.pending || 0, color: theme.warning },
+              { label: "Cancelled", value: analyticsCharts?.appointments?.cancelled || 0, color: theme.error || "#EF4444" },
+              { label: "Completed", value: analyticsCharts?.appointments?.completed || 0, color: theme.primary },
+            ]}
+          />
         </View>
 
         <View
@@ -161,6 +171,41 @@ export default function MedicAnalyticsScreen() {
           <Text style={{ color: theme.textSecondary, fontSize: 12 }}>Pending money: {formatMoney(analyticsTotals.pendingMoney)}</Text>
           <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
             Pending from patients under treatment: {formatMoney(analyticsTotals.pendingFromTreatingPatients)}
+          </Text>
+          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+            Pending appointment fees: {formatMoney(analyticsTotals.pendingAppointmentFees)}
+          </Text>
+        </View>
+
+        <View
+          style={{
+            backgroundColor: theme.card,
+            borderTopWidth: isDark ? 0 : 1.5,
+            borderTopColor: isDark ? theme.border : theme.accent,
+            borderRadius: 16,
+            padding: 14,
+            borderWidth: 1,
+            borderColor: theme.border,
+            marginBottom: 20,
+          }}
+        >
+          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+            Appointments total: {analyticsTotals.totalAppointments || 0}
+          </Text>
+          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+            Confirmed: {analyticsTotals.confirmedAppointments || 0}
+          </Text>
+          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+            Pending: {analyticsTotals.pendingAppointments || 0}
+          </Text>
+          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+            Completed: {analyticsTotals.completedAppointments || 0}
+          </Text>
+          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+            Cancelled: {analyticsTotals.cancelledAppointments || 0}
+          </Text>
+          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+            Pending appointment fees: {formatMoney(analyticsCharts?.appointments?.pendingAmount)}
           </Text>
         </View>
 

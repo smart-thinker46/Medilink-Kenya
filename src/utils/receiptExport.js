@@ -34,11 +34,27 @@ const buildReceiptHtml = ({ payment, payer, recipient, business, logoDataUri }) 
     payment?.description ||
     (type === "VIDEO_CALL" ? "Video Call" : type === "SUBSCRIPTION" ? "Subscription" : "Payment");
 
-  const payerName = payer?.name || payer?.fullName || payer?.email || "Customer";
+  const payerName =
+    payer?.name ||
+    payer?.fullName ||
+    payer?.hospitalName ||
+    payer?.pharmacyName ||
+    payer?.businessName ||
+    payer?.email ||
+    "Customer";
   const payerEmail = payer?.email || "-";
   const payerPhone = payer?.phone || "-";
-  const recipientName = recipient?.name || recipient?.fullName || "-";
+  const recipientName =
+    recipient?.name ||
+    recipient?.fullName ||
+    recipient?.hospitalName ||
+    recipient?.pharmacyName ||
+    recipient?.businessName ||
+    "-";
   const recipientRole = recipient?.role || payment?.recipientRole || "-";
+  const brandColor = business?.primaryColor || "#0f766e";
+  const accentColor = business?.accentColor || "#0ea5e9";
+  const supportEmail = business?.email || "support@medilink.co.ke";
 
   return `
   <!doctype html>
@@ -46,12 +62,15 @@ const buildReceiptHtml = ({ payment, payer, recipient, business, logoDataUri }) 
     <head>
       <meta charset="utf-8" />
       <style>
-        body { font-family: "Inter", "Segoe UI", Arial, sans-serif; margin: 0; padding: 32px; color: #1f2937; }
-        .receipt { max-width: 720px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 16px; padding: 28px; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .brand { font-weight: 700; font-size: 22px; color: #0f172a; }
+        body { font-family: "Inter", "Segoe UI", Arial, sans-serif; margin: 0; padding: 32px; color: #0f172a; background: #f8fafc; }
+        .receipt { max-width: 720px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 20px; padding: 28px; background: #ffffff; }
+        .flag { position: relative; height: 64px; border-radius: 14px; overflow: hidden; margin-bottom: 18px; background: linear-gradient(180deg, #111827 0 30%, #f8fafc 30% 34%, #b91c1c 34% 66%, #f8fafc 66% 70%, #15803d 70% 100%); }
+        .flag-logo { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 64px; height: 64px; border-radius: 999px; background: #fff; border: 2px solid #0f172a; display: flex; align-items: center; justify-content: center; }
+        .flag-logo img { height: 38px; width: auto; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+        .brand { font-weight: 700; font-size: 22px; color: ${brandColor}; }
         .sub { font-size: 12px; color: #64748b; margin-top: 4px; }
-        .badge { background: #e2e8f0; color: #0f172a; padding: 4px 10px; border-radius: 999px; font-size: 12px; }
+        .badge { background: ${accentColor}; color: #ffffff; padding: 4px 10px; border-radius: 999px; font-size: 12px; }
         .section { margin-top: 20px; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
         .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #94a3b8; }
@@ -61,16 +80,20 @@ const buildReceiptHtml = ({ payment, payer, recipient, business, logoDataUri }) 
         th, td { text-align: left; padding: 10px 0; font-size: 13px; border-bottom: 1px solid #e5e7eb; }
         .total { font-weight: 700; font-size: 16px; text-align: right; padding-top: 12px; }
         .footer { text-align: center; font-size: 12px; color: #94a3b8; margin-top: 24px; }
+        .footer-logo { margin: 12px auto 6px; height: 28px; width: auto; }
       </style>
     </head>
     <body>
       <div class="receipt">
+        <div class="flag">
+          ${logoDataUri ? `<div class="flag-logo"><img src="${logoDataUri}" alt="Logo" /></div>` : ""}
+        </div>
         <div class="header">
           <div>
-            ${logoDataUri ? `<img src="${logoDataUri}" alt="Logo" style="height:48px; margin-bottom:8px;" />` : ""}
             <div class="brand">${escapeHtml(business?.name || "MediLink Kenya")}</div>
             <div class="sub">${escapeHtml(business?.address || "Nairobi, Kenya")}</div>
             <div class="sub">${escapeHtml(business?.phone || "+254 700 000 000")}</div>
+            <div class="sub">${escapeHtml(supportEmail)}</div>
           </div>
           <div class="badge">${escapeHtml(status)}</div>
         </div>
@@ -96,19 +119,23 @@ const buildReceiptHtml = ({ payment, payer, recipient, business, logoDataUri }) 
             <div class="label">Method</div>
             <div class="value">${escapeHtml(method)}</div>
           </div>
+          <div>
+            <div class="label">Reason</div>
+            <div class="value">${escapeHtml(description)}</div>
+          </div>
         </div>
 
         <div class="line"></div>
 
         <div class="grid">
           <div>
-            <div class="label">Paid By</div>
+            <div class="label">Payer / Employer</div>
             <div class="value">${escapeHtml(payerName)}</div>
             <div class="value">${escapeHtml(payerEmail)}</div>
             <div class="value">${escapeHtml(payerPhone)}</div>
           </div>
           <div>
-            <div class="label">Recipient</div>
+            <div class="label">Paid To</div>
             <div class="value">${escapeHtml(recipientName)}</div>
             <div class="value">${escapeHtml(recipientRole)}</div>
           </div>
@@ -120,6 +147,7 @@ const buildReceiptHtml = ({ payment, payer, recipient, business, logoDataUri }) 
             <thead>
               <tr>
                 <th>Service</th>
+                <th>Reason</th>
                 <th style="text-align:right;">Amount Paid</th>
               </tr>
             </thead>
@@ -128,6 +156,7 @@ const buildReceiptHtml = ({ payment, payer, recipient, business, logoDataUri }) 
                 <td>${escapeHtml(description)}${plan ? ` • ${escapeHtml(plan)}` : ""}${
                   minutes ? ` • ${escapeHtml(minutes)} min` : ""
                 }</td>
+                <td>${escapeHtml(description)}</td>
                 <td style="text-align:right;">${escapeHtml(formatCurrency(amount, payment?.currency || "KES"))}</td>
               </tr>
             </tbody>
@@ -141,7 +170,10 @@ const buildReceiptHtml = ({ payment, payer, recipient, business, logoDataUri }) 
         </div>
 
         <div class="footer">
-          Thank you for your payment. If you have any questions, contact support.
+          ${logoDataUri ? `<img class="footer-logo" src="${logoDataUri}" alt="Logo" />` : ""}
+          <div>MediLink Kenya • Digital Health Network</div>
+          <div>${escapeHtml(business?.phone || "+254 700 000 000")} • ${escapeHtml(supportEmail)}</div>
+          <div>Thank you for your payment.</div>
         </div>
       </div>
     </body>
@@ -166,38 +198,72 @@ const resolveLogoDataUri = async (logoSource) => {
   }
 };
 
-export const exportReceipt = async ({ payment, payer, recipient, business, logo }) => {
+const prepareReceiptHtml = async ({ payment, payer, recipient, business, logo }) => {
   const businessInfo = {
     name: "MediLink Kenya",
     address: "Nairobi, Kenya",
     phone: "+254 700 000 000",
+    email: "support@medilink.co.ke",
     ...(business || {}),
   };
   const logoDataUri = await resolveLogoDataUri(logo || DEFAULT_LOGO);
   const html = buildReceiptHtml({ payment, payer, recipient, business: businessInfo, logoDataUri });
   const filename = `receipt-${payment?.receiptNumber || payment?.id || "payment"}.pdf`;
+  return { html, filename };
+};
+
+export const previewReceipt = async ({ payment, payer, recipient, business, logo }) => {
+  const { html } = await prepareReceiptHtml({ payment, payer, recipient, business, logo });
 
   if (Platform.OS === "web") {
     if (typeof document !== "undefined") {
-      const blob = new Blob([html], { type: "text/html;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", filename.replace(".pdf", ".html"));
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
       const win = window.open("", "_blank");
       if (win) {
         win.document.write(html);
         win.document.close();
         win.focus();
-        win.print();
       }
     }
-    return { shared: false, downloaded: true };
+    return { previewed: true };
+  }
+
+  await Print.printAsync({ html });
+  return { previewed: true };
+};
+
+export const exportReceipt = async ({ payment, payer, recipient, business, logo }) => {
+  const { html, filename } = await prepareReceiptHtml({
+    payment,
+    payer,
+    recipient,
+    business,
+    logo,
+  });
+
+  if (Platform.OS === "web") {
+    try {
+      const result = await Print.printToFileAsync({ html });
+      if (result?.uri && typeof document !== "undefined") {
+        const link = document.createElement("a");
+        link.href = result.uri;
+        link.setAttribute("download", filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+      return { shared: false, downloaded: true };
+    } catch {
+      if (typeof document !== "undefined") {
+        const win = window.open("", "_blank");
+        if (win) {
+          win.document.write(html);
+          win.document.close();
+          win.focus();
+          win.print();
+        }
+      }
+      return { shared: false, downloaded: true };
+    }
   }
 
   const { uri } = await Print.printToFileAsync({ html, base64: false });

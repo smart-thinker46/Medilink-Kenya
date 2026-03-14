@@ -9,6 +9,7 @@ import { Picker } from "@react-native-picker/picker";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
+import { useToast } from "@/components/ToastProvider";
 import apiClient from "@/utils/api";
 import { useHospitalProfile } from "@/utils/useHospitalProfile";
 import { getHospitalProfileCompletion } from "@/utils/hospitalProfileCompletion";
@@ -17,6 +18,7 @@ export default function HospitalShiftsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useAppTheme();
+  const { showToast } = useToast();
   const queryClient = useQueryClient();
   const { profile } = useHospitalProfile();
   const completion = useMemo(
@@ -72,6 +74,30 @@ export default function HospitalShiftsScreen() {
     mutationFn: ({ id }) => apiClient.deleteShift(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["shifts", "hospital"] });
+    },
+  });
+
+  const approveApplicationMutation = useMutation({
+    mutationFn: ({ shiftId, medicId }) => apiClient.approveShiftApplication(shiftId, medicId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["shifts", "hospital"] });
+      queryClient.invalidateQueries({ queryKey: ["available-shifts"] });
+      showToast("Application approved.", "success");
+    },
+    onError: (error) => {
+      showToast(error?.message || "Approve failed.", "error");
+    },
+  });
+
+  const rejectApplicationMutation = useMutation({
+    mutationFn: ({ shiftId, medicId }) => apiClient.rejectShiftApplication(shiftId, medicId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["shifts", "hospital"] });
+      queryClient.invalidateQueries({ queryKey: ["available-shifts"] });
+      showToast("Application rejected.", "success");
+    },
+    onError: (error) => {
+      showToast(error?.message || "Reject failed.", "error");
     },
   });
 
@@ -240,7 +266,7 @@ export default function HospitalShiftsScreen() {
                   <Picker.Item label="All statuses" value="" />
                   <Picker.Item label="Open" value="OPEN" />
                   <Picker.Item label="Cancelled" value="CANCELLED" />
-                  <Picker.Item label="Completed" value="COMPLETED" />
+                  <Picker.Item label="Closed" value="CLOSED" />
                 </Picker>
               </View>
               <View style={{ backgroundColor: theme.surface, borderRadius: 12, marginBottom: 8 }}>
@@ -279,6 +305,11 @@ export default function HospitalShiftsScreen() {
           contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24 }}
           renderItem={({ item, index }) => {
             const appliedCount = Array.isArray(item?.applications) ? item.applications.length : 0;
+            const applications = Array.isArray(item?.applications) ? item.applications : [];
+            const approvedCount = applications.filter(
+              (app) => String(app?.status || "").toUpperCase() === "APPROVED",
+            ).length;
+            const requiredSlots = Number(item?.requiredMedics || 0);
             const isExpanded = expandedShiftId === item.id;
             return (
             <MotiView
@@ -357,6 +388,39 @@ export default function HospitalShiftsScreen() {
                 >
                   {item.description || item.specifications || "Pending details"}
                 </Text>
+                {[
+                  { label: "Date", value: item.shiftDate },
+                  {
+                    label: "Time",
+                    value: item.startTime && item.endTime ? `${item.startTime} - ${item.endTime}` : null,
+                  },
+                  { label: "Department", value: item.department },
+                  { label: "Specialty", value: item.specialization || item.category },
+                  { label: "Consultation duration", value: item.consultationDuration ? `${item.consultationDuration} min` : null },
+                  { label: "Max patients", value: item.maxPatients ? String(item.maxPatients) : null },
+                  { label: "Branch", value: item.hospitalBranch },
+                  { label: "Room", value: item.roomNumber },
+                  {
+                    label: "Consultation types",
+                    value: Array.isArray(item.consultationTypes)
+                      ? item.consultationTypes.map((type) => String(type)).join(", ")
+                      : null,
+                  },
+                  {
+                    label: "Availability",
+                    value: item.isAvailable === false ? "Not available" : "Available",
+                  },
+                  {
+                    label: "Walk-in",
+                    value: item.walkInAllowed ? "Allowed" : "Not allowed",
+                  },
+                ]
+                  .filter((row) => row.value)
+                  .map((row) => (
+                    <Text key={row.label} style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 4 }}>
+                      {row.label}: {row.value}
+                    </Text>
+                  ))}
                 <Text
                   style={{
                     fontSize: 12,
@@ -441,6 +505,88 @@ export default function HospitalShiftsScreen() {
                     <Trash2 color="#C2410C" size={16} />
                     <Text style={{ marginLeft: 6, color: "#C2410C" }}>Delete</Text>
                   </TouchableOpacity>
+                </View>
+                <View style={{ marginTop: 14 }}>
+                  <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: theme.text }}>
+                    Applicants ({approvedCount}/{requiredSlots || "?"} approved)
+                  </Text>
+                  {applications.length ? (
+                    <View style={{ marginTop: 8, gap: 8 }}>
+                      {applications.map((app, idx) => {
+                        const status = String(app?.status || "PENDING").toUpperCase();
+                        const name =
+                          app?.medicName ||
+                          app?.medicEmail ||
+                          app?.medicId ||
+                          `Medic ${idx + 1}`;
+                        return (
+                          <View
+                            key={`${item.id}-app-${app?.medicId || idx}`}
+                            style={{
+                              backgroundColor: theme.surface,
+                              borderRadius: 10,
+                              padding: 10,
+                              borderWidth: 1,
+                              borderColor: theme.border,
+                            }}
+                          >
+                            <Text style={{ fontSize: 12, color: theme.text }}>
+                              {name}
+                            </Text>
+                            <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 2 }}>
+                              Status: {status}
+                            </Text>
+                            {status === "PENDING" && (
+                              <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                                <TouchableOpacity
+                                  style={{
+                                    flex: 1,
+                                    backgroundColor: `${theme.success}15`,
+                                    borderRadius: 8,
+                                    paddingVertical: 8,
+                                    alignItems: "center",
+                                    borderWidth: 1,
+                                    borderColor: `${theme.success}40`,
+                                  }}
+                                  onPress={() =>
+                                    approveApplicationMutation.mutate({
+                                      shiftId: item.id,
+                                      medicId: app.medicId,
+                                    })
+                                  }
+                                >
+                                  <Text style={{ fontSize: 12, color: theme.success }}>Approve</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={{
+                                    flex: 1,
+                                    backgroundColor: `${theme.error}15`,
+                                    borderRadius: 8,
+                                    paddingVertical: 8,
+                                    alignItems: "center",
+                                    borderWidth: 1,
+                                    borderColor: `${theme.error}40`,
+                                  }}
+                                  onPress={() =>
+                                    rejectApplicationMutation.mutate({
+                                      shiftId: item.id,
+                                      medicId: app.medicId,
+                                    })
+                                  }
+                                >
+                                  <Text style={{ fontSize: 12, color: theme.error }}>Reject</Text>
+                                </TouchableOpacity>
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <Text style={{ marginTop: 6, fontSize: 12, color: theme.textSecondary }}>
+                      No applications yet.
+                    </Text>
+                  )}
                 </View>
                   </>
                 )}

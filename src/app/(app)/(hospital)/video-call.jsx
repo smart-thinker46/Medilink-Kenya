@@ -12,7 +12,7 @@ import { useVideoCallContext as useVideoCall } from "@/utils/videoCallContext";
 import apiClient from "@/utils/api";
 import { useI18n } from "@/utils/i18n";
 import { shareCsv } from "@/utils/csvExport";
-import { exportReceipt } from "@/utils/receiptExport";
+import { previewReceipt } from "@/utils/receiptExport";
 
 export default function HospitalVideoCallScreen() {
   const router = useRouter();
@@ -110,7 +110,7 @@ export default function HospitalVideoCallScreen() {
   };
 
   const downloadReceipt = async (payment) => {
-    await exportReceipt({
+    await previewReceipt({
       payment,
       payer: { email: payment.payerEmail },
       recipient: { role: payment.recipientRole },
@@ -468,7 +468,7 @@ export default function HospitalVideoCallScreen() {
                   >
                     <Download color={theme.iconColor} size={14} />
                     <Text style={{ marginLeft: 6, fontSize: 11, color: theme.textSecondary }}>
-                      Download Receipt
+                      Preview Receipt
                     </Text>
                   </TouchableOpacity>
                 </View>

@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { View, Text, TouchableOpacity, FlatList, TextInput, Alert, Modal, ActivityIndicator, Image, ScrollView } from "react-native";
+import React, { useMemo, useState, useEffect } from "react";
+import { View, Text, TouchableOpacity, FlatList, TextInput, Alert, Modal, ActivityIndicator, Image, ScrollView, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -24,6 +24,7 @@ export default function PharmacyProductsScreen() {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useAppTheme();
   const { showToast } = useToast();
+  const isWeb = Platform.OS === "web";
   const { profile } = usePharmacyProfile();
   const completion = useMemo(
     () => getPharmacyProfileCompletion(profile),
@@ -47,6 +48,36 @@ export default function PharmacyProductsScreen() {
   });
 
   const products = productsQuery.data || [];
+  const pageSize = isWeb ? 6 : products.length || 0;
+  const totalPages = isWeb ? Math.max(1, Math.ceil(products.length / pageSize)) : 1;
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    if (!isWeb) return;
+    if (page > totalPages) {
+      setPage(totalPages);
+    } else if (page < 1) {
+      setPage(1);
+    }
+  }, [page, totalPages, isWeb]);
+
+  useEffect(() => {
+    if (!isWeb || totalPages <= 1) return;
+    const handleKey = (event) => {
+      if (event.key === "ArrowLeft") {
+        setPage((prev) => Math.max(1, prev - 1));
+      }
+      if (event.key === "ArrowRight") {
+        setPage((prev) => Math.min(totalPages, prev + 1));
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [isWeb, totalPages]);
+
+  const pagedProducts = isWeb
+    ? products.slice((page - 1) * pageSize, page * pageSize)
+    : products;
 
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
@@ -416,15 +447,25 @@ export default function PharmacyProductsScreen() {
         )}
 
         <FlatList
-          data={products}
+          data={pagedProducts}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24 }}
+          contentContainerStyle={{
+            paddingHorizontal: 24,
+            paddingBottom: 24,
+            ...(isWeb
+              ? { flexDirection: "row", flexWrap: "wrap", alignItems: "stretch" }
+              : null),
+          }}
           renderItem={({ item, index }) => (
             <MotiView
               from={{ opacity: 0, translateY: 10 }}
               animate={{ opacity: 1, translateY: 0 }}
               transition={{ type: "timing", duration: 500, delay: index * 80 }}
-              style={{ marginBottom: 16 }}
+              style={{
+                marginBottom: isWeb ? 0 : 16,
+                width: isWeb ? "33.333%" : "100%",
+                padding: isWeb ? 8 : 0,
+              }}
             >
               <View
                 style={{
@@ -433,19 +474,20 @@ export default function PharmacyProductsScreen() {
                   padding: 16,
                   borderWidth: 1,
                   borderColor: theme.border,
-                  flexDirection: "row",
-                  alignItems: "center",
+                  flexDirection: isWeb ? "column" : "row",
+                  alignItems: isWeb ? "flex-start" : "center",
                 }}
               >
                 <View
                   style={{
-                    width: 48,
-                    height: 48,
+                    width: isWeb ? "100%" : 48,
+                    height: isWeb ? 120 : 48,
                     borderRadius: 12,
                     backgroundColor: theme.surface,
                     justifyContent: "center",
                     alignItems: "center",
-                    marginRight: 12,
+                    marginRight: isWeb ? 0 : 12,
+                    marginBottom: isWeb ? 10 : 0,
                     overflow: "hidden",
                   }}
                 >
@@ -538,6 +580,89 @@ export default function PharmacyProductsScreen() {
             </MotiView>
           )}
         />
+        {isWeb && totalPages > 1 ? (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingHorizontal: 24,
+              paddingBottom: 16,
+            }}
+          >
+            <TouchableOpacity
+              onPress={() => setPage((prev) => Math.max(1, prev - 1))}
+              disabled={page <= 1}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: page <= 1 ? theme.surface : theme.card,
+                opacity: page <= 1 ? 0.6 : 1,
+              }}
+            >
+              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>Previous</Text>
+            </TouchableOpacity>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              {(() => {
+                const maxButtons = 7;
+                const half = Math.floor(maxButtons / 2);
+                let start = Math.max(1, page - half);
+                let end = Math.min(totalPages, start + maxButtons - 1);
+                if (end - start + 1 < maxButtons) {
+                  start = Math.max(1, end - maxButtons + 1);
+                }
+                const pages = [];
+                for (let i = start; i <= end; i += 1) pages.push(i);
+                return pages.map((pg) => {
+                  const active = pg === page;
+                  return (
+                    <TouchableOpacity
+                      key={`page-${pg}`}
+                      onPress={() => setPage(pg)}
+                      style={{
+                        minWidth: 28,
+                        paddingHorizontal: 8,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: active ? theme.primary : theme.border,
+                        backgroundColor: active ? `${theme.primary}22` : theme.card,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: active ? theme.primary : theme.textSecondary,
+                          fontSize: 12,
+                          textAlign: "center",
+                        }}
+                      >
+                        {pg}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                });
+              })()}
+            </View>
+            <TouchableOpacity
+              onPress={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={page >= totalPages}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: page >= totalPages ? theme.surface : theme.card,
+                opacity: page >= totalPages ? 0.6 : 1,
+              }}
+            >
+              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>Next</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         <Modal visible={showForm} animationType="slide" transparent>
           <View

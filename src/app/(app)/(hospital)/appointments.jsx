@@ -1,10 +1,10 @@
-import React, { useMemo } from "react";
-import { View, Text, TouchableOpacity, FlatList } from "react-native";
+import React, { useMemo, useState } from "react";
+import { View, Text, TouchableOpacity, FlatList, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { MotiView } from "moti";
-import { ArrowLeft, Check, X, Calendar, MapPin, Heart } from "lucide-react-native";
+import { ArrowLeft, Check, X, Calendar, MapPin, Heart, ChevronDown, ChevronUp, MessageCircle, Video } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -15,6 +15,7 @@ import { useHospitalProfile } from "@/utils/useHospitalProfile";
 import { getHospitalProfileCompletion } from "@/utils/hospitalProfileCompletion";
 import LocationPreview from "@/components/LocationPreview";
 import { getDistanceKm } from "@/utils/locationHelpers";
+import { useVideoCallContext as useVideoCall } from "@/utils/videoCallContext";
 
 export default function HospitalAppointmentsScreen() {
   const router = useRouter();
@@ -22,6 +23,7 @@ export default function HospitalAppointmentsScreen() {
   const { theme, isDark } = useAppTheme();
   const { showToast } = useToast();
   const { profile } = useHospitalProfile();
+  const { initiateCall } = useVideoCall();
   const completion = useMemo(
     () => getHospitalProfileCompletion(profile),
     [profile],
@@ -47,6 +49,7 @@ export default function HospitalAppointmentsScreen() {
     return acc;
   }, {});
   const myLocation = myLocationQuery.data?.location || null;
+  const [expandedIds, setExpandedIds] = useState(() => new Set());
   const requests = myLocation
     ? [...requestsRaw].sort((a, b) => {
         const aLoc = linkedMap[a.patientId || a.patient_id];
@@ -59,6 +62,18 @@ export default function HospitalAppointmentsScreen() {
         return aDist - bDist;
       })
     : requestsRaw;
+
+  const toggleExpanded = (id) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
   const handleAction = async (actionName, appointmentId) => {
     if (!isProfileComplete) {
@@ -83,6 +98,50 @@ export default function HospitalAppointmentsScreen() {
       }
       showToast(error.message || "Action failed. Please try again.", "error");
     }
+  };
+
+  const handleChat = (patientId) => {
+    if (!patientId) {
+      showToast("Missing patient for chat.", "warning");
+      return;
+    }
+    router.push(`/(app)/(hospital)/chat?userId=${patientId}`);
+  };
+
+  const handleCall = (patientId, patientName, appointmentId) => {
+    if (!patientId) {
+      showToast("Missing patient for call.", "warning");
+      return;
+    }
+    Alert.alert("Start Call", "Choose call type", [
+      {
+        text: "Audio",
+        onPress: () =>
+          initiateCall({
+            participantId: patientId,
+            participantName: patientName || "Patient",
+            participantRole: "Patient",
+            type: "consultation",
+            appointmentId,
+            role: "host",
+            mode: "audio",
+          }),
+      },
+      {
+        text: "Video",
+        onPress: () =>
+          initiateCall({
+            participantId: patientId,
+            participantName: patientName || "Patient",
+            participantRole: "Patient",
+            type: "consultation",
+            appointmentId,
+            role: "host",
+            mode: "video",
+          }),
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
   };
 
   return (
@@ -156,52 +215,69 @@ export default function HospitalAppointmentsScreen() {
                   borderColor: theme.border,
                 }}
               >
-                <Text
-                  style={{
-                    fontSize: 16,
-                    fontFamily: "Inter_600SemiBold",
-                    color: theme.text,
-                    marginBottom: 6,
-                  }}
+                <TouchableOpacity
+                  onPress={() => toggleExpanded(item.id)}
+                  style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
                 >
-                  {item.patientName || item.patient?.name || "Patient Request"}
-                </Text>
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Calendar color={theme.textSecondary} size={14} />
-                <Text
-                  style={{
-                    fontSize: 12,
-                    fontFamily: "Inter_500Medium",
-                    color: theme.textSecondary,
-                    marginLeft: 6,
-                  }}
-                >
-                  {item.date || "--"} {item.time || ""}
-                </Text>
-                {myLocation && linkedMap[item.patientId || item.patient_id] ? (
-                  <View
+                  <Text
                     style={{
-                      marginLeft: 12,
-                      backgroundColor: theme.surface,
-                      borderRadius: 12,
-                      paddingHorizontal: 8,
-                      paddingVertical: 4,
+                      fontSize: 16,
+                      fontFamily: "Inter_600SemiBold",
+                      color: theme.text,
                     }}
                   >
-                    <Text style={{ fontSize: 11, color: theme.textSecondary }}>
-                      {getDistanceKm(
-                        myLocation,
-                        linkedMap[item.patientId || item.patient_id],
-                      )?.toFixed(1)}{" "}
-                      km
-                    </Text>
-                  </View>
+                    {item.patientName || item.patient?.name || "Patient Request"}
+                  </Text>
+                  {expandedIds.has(item.id) ? (
+                    <ChevronUp color={theme.textSecondary} size={18} />
+                  ) : (
+                    <ChevronDown color={theme.textSecondary} size={18} />
+                  )}
+                </TouchableOpacity>
+                {!expandedIds.has(item.id) ? (
+                  <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 4 }}>
+                    Tap to view details
+                  </Text>
                 ) : null}
-              </View>
 
-                <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
-                  <TouchableOpacity
-                    style={{
+                {expandedIds.has(item.id) ? (
+                  <>
+                    <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8 }}>
+                      <Calendar color={theme.textSecondary} size={14} />
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontFamily: "Inter_500Medium",
+                          color: theme.textSecondary,
+                          marginLeft: 6,
+                        }}
+                      >
+                        {item.date || "--"} {item.time || ""}
+                      </Text>
+                      {myLocation && linkedMap[item.patientId || item.patient_id] ? (
+                        <View
+                          style={{
+                            marginLeft: 12,
+                            backgroundColor: theme.surface,
+                            borderRadius: 12,
+                            paddingHorizontal: 8,
+                            paddingVertical: 4,
+                          }}
+                        >
+                          <Text style={{ fontSize: 11, color: theme.textSecondary }}>
+                            {getDistanceKm(
+                              myLocation,
+                              linkedMap[item.patientId || item.patient_id],
+                            )?.toFixed(1)}{" "}
+                            km
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
+                      <TouchableOpacity
+                        style={{
                       flex: 1,
                       backgroundColor: `${theme.success}15`,
                       borderRadius: 12,
@@ -312,8 +388,70 @@ export default function HospitalAppointmentsScreen() {
                     >
                       Decline
                     </Text>
-                  </TouchableOpacity>
-                </View>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
+                      <TouchableOpacity
+                        style={{
+                          flex: 1,
+                          backgroundColor: theme.surface,
+                          borderRadius: 12,
+                          paddingVertical: 10,
+                          alignItems: "center",
+                          flexDirection: "row",
+                          justifyContent: "center",
+                          borderWidth: 1,
+                          borderColor: theme.border,
+                        }}
+                        onPress={() => handleChat(item.patientId || item.patient_id)}
+                      >
+                        <MessageCircle color={theme.iconColor} size={16} />
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontFamily: "Inter_600SemiBold",
+                            color: theme.textSecondary,
+                            marginLeft: 6,
+                          }}
+                        >
+                          Chat
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={{
+                          flex: 1,
+                          backgroundColor: `${theme.primary}12`,
+                          borderRadius: 12,
+                          paddingVertical: 10,
+                          alignItems: "center",
+                          flexDirection: "row",
+                          justifyContent: "center",
+                          borderWidth: 1,
+                          borderColor: `${theme.primary}40`,
+                        }}
+                        onPress={() =>
+                          handleCall(
+                            item.patientId || item.patient_id,
+                            item.patientName || item.patient?.name,
+                            item.id,
+                          )
+                        }
+                      >
+                        <Video color={theme.primary} size={16} />
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontFamily: "Inter_600SemiBold",
+                            color: theme.primary,
+                            marginLeft: 6,
+                          }}
+                        >
+                          Call
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
 
                 {item.patientId || item.patient_id ? (
                   <LocationPreview
@@ -322,6 +460,8 @@ export default function HospitalAppointmentsScreen() {
                     isDark={isDark}
                     height={80}
                   />
+                ) : null}
+                  </>
                 ) : null}
               </View>
             </MotiView>

@@ -9,6 +9,7 @@ import { Picker } from "@react-native-picker/picker";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
+import { useToast } from "@/components/ToastProvider";
 import apiClient from "@/utils/api";
 import { useHospitalProfile } from "@/utils/useHospitalProfile";
 import { getHospitalProfileCompletion } from "@/utils/hospitalProfileCompletion";
@@ -28,6 +29,7 @@ export default function HospitalJobsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme } = useAppTheme();
+  const { showToast } = useToast();
   const queryClient = useQueryClient();
   const { profile } = useHospitalProfile();
   const completion = useMemo(() => getHospitalProfileCompletion(profile), [profile]);
@@ -75,6 +77,30 @@ export default function HospitalJobsScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs", "hospital"] });
       queryClient.invalidateQueries({ queryKey: ["jobs", "shared"] });
+    },
+  });
+
+  const approveApplicationMutation = useMutation({
+    mutationFn: ({ jobId, medicId }) => apiClient.approveJobApplication(jobId, medicId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["jobs", "hospital"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs", "shared"] });
+      showToast("Application approved.", "success");
+    },
+    onError: (error) => {
+      showToast(error?.message || "Approve failed.", "error");
+    },
+  });
+
+  const rejectApplicationMutation = useMutation({
+    mutationFn: ({ jobId, medicId }) => apiClient.rejectJobApplication(jobId, medicId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["jobs", "hospital"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs", "shared"] });
+      showToast("Application rejected.", "success");
+    },
+    onError: (error) => {
+      showToast(error?.message || "Reject failed.", "error");
     },
   });
 
@@ -239,7 +265,7 @@ export default function HospitalJobsScreen() {
                   <Picker.Item label="All statuses" value="" />
                   <Picker.Item label="Open" value="OPEN" />
                   <Picker.Item label="Cancelled" value="CANCELLED" />
-                  <Picker.Item label="Completed" value="COMPLETED" />
+                  <Picker.Item label="Closed" value="CLOSED" />
                 </Picker>
               </View>
               <View style={{ backgroundColor: theme.surface, borderRadius: 12, marginBottom: 8 }}>
@@ -278,6 +304,11 @@ export default function HospitalJobsScreen() {
           contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24 }}
           renderItem={({ item, index }) => {
             const appliedCount = Array.isArray(item?.applications) ? item.applications.length : 0;
+            const applications = Array.isArray(item?.applications) ? item.applications : [];
+            const approvedCount = applications.filter(
+              (app) => String(app?.status || "").toUpperCase() === "APPROVED",
+            ).length;
+            const requiredSlots = Number(item?.requiredMedics || 0);
             const isExpanded = expandedJobId === item.id;
             const details = item?.jobDetails || parseJobDetails(item?.specifications);
             return (
@@ -348,7 +379,16 @@ export default function HospitalJobsScreen() {
                       </Text>
                       <View style={{ marginTop: 12, gap: 6 }}>
                         <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                          Category: {item.jobCategory || details.jobCategory || "N/A"}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: theme.textSecondary }}>
                           Department: {item.department || details.department || "N/A"}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                          Facility: {item.facilityType || details.facilityType || "N/A"}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                          Location: {[item.county, item.city, item.address].filter(Boolean).join(", ") || item.location || "N/A"}
                         </Text>
                         <Text style={{ fontSize: 12, color: theme.textSecondary }}>
                           Job Type: {item.jobType || details.jobType || "N/A"}
@@ -360,6 +400,15 @@ export default function HospitalJobsScreen() {
                           Experience: {item.experienceLevel || details.experienceLevel || "N/A"}
                         </Text>
                         <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                          Education: {item.educationLevel || details.educationLevel || "N/A"}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                          License: {item.licenseBody || details.licenseBody || "N/A"}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                          Years: {item.experienceYears || details.experienceYears || "N/A"}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: theme.textSecondary }}>
                           Responsibilities: {item.responsibilities || details.responsibilities || "N/A"}
                         </Text>
                         <Text style={{ fontSize: 12, color: theme.textSecondary }}>
@@ -369,8 +418,99 @@ export default function HospitalJobsScreen() {
                           Benefits: {item.benefits || details.benefits || "N/A"}
                         </Text>
                         <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                          Salary: {item.payMin || item.salaryMin || ""}{item.payMax || item.salaryMax ? ` - ${item.payMax || item.salaryMax}` : ""} {item.payType || item.salaryType || ""}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                          Application Method: {item.applicationMethod || details.applicationMethod || "N/A"}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                          Required Docs: {Array.isArray(item.requiredDocuments) ? item.requiredDocuments.join(", ") : "N/A"}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: theme.textSecondary }}>
                           Contact: {item.contactEmail || details.contactEmail || "N/A"} {(item.contactPhone || details.contactPhone) ? `| ${item.contactPhone || details.contactPhone}` : ""}
                         </Text>
+                      </View>
+                      <View style={{ marginTop: 14 }}>
+                        <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: theme.text }}>
+                          Applicants ({approvedCount}/{requiredSlots || "?"} approved)
+                        </Text>
+                        {applications.length ? (
+                          <View style={{ marginTop: 8, gap: 8 }}>
+                            {applications.map((app, idx) => {
+                              const status = String(app?.status || "PENDING").toUpperCase();
+                              const name =
+                                app?.medicName ||
+                                app?.medicEmail ||
+                                app?.medicId ||
+                                `Medic ${idx + 1}`;
+                              return (
+                                <View
+                                  key={`${item.id}-app-${app?.medicId || idx}`}
+                                  style={{
+                                    backgroundColor: theme.surface,
+                                    borderRadius: 10,
+                                    padding: 10,
+                                    borderWidth: 1,
+                                    borderColor: theme.border,
+                                  }}
+                                >
+                                  <Text style={{ fontSize: 12, color: theme.text }}>
+                                    {name}
+                                  </Text>
+                                  <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 2 }}>
+                                    Status: {status}
+                                  </Text>
+                                  {status === "PENDING" && (
+                                    <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                                      <TouchableOpacity
+                                        style={{
+                                          flex: 1,
+                                          backgroundColor: `${theme.success}15`,
+                                          borderRadius: 8,
+                                          paddingVertical: 8,
+                                          alignItems: "center",
+                                          borderWidth: 1,
+                                          borderColor: `${theme.success}40`,
+                                        }}
+                                        onPress={() =>
+                                          approveApplicationMutation.mutate({
+                                            jobId: item.id,
+                                            medicId: app.medicId,
+                                          })
+                                        }
+                                      >
+                                        <Text style={{ fontSize: 12, color: theme.success }}>Approve</Text>
+                                      </TouchableOpacity>
+                                      <TouchableOpacity
+                                        style={{
+                                          flex: 1,
+                                          backgroundColor: `${theme.error}15`,
+                                          borderRadius: 8,
+                                          paddingVertical: 8,
+                                          alignItems: "center",
+                                          borderWidth: 1,
+                                          borderColor: `${theme.error}40`,
+                                        }}
+                                        onPress={() =>
+                                          rejectApplicationMutation.mutate({
+                                            jobId: item.id,
+                                            medicId: app.medicId,
+                                          })
+                                        }
+                                      >
+                                        <Text style={{ fontSize: 12, color: theme.error }}>Reject</Text>
+                                      </TouchableOpacity>
+                                    </View>
+                                  )}
+                                </View>
+                              );
+                            })}
+                          </View>
+                        ) : (
+                          <Text style={{ marginTop: 6, fontSize: 12, color: theme.textSecondary }}>
+                            No applications yet.
+                          </Text>
+                        )}
                       </View>
                     </>
                   )}

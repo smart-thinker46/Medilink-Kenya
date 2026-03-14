@@ -31,6 +31,7 @@ import { useAppTheme } from "@/components/ThemeProvider";
 import { usePatientProfile } from "@/utils/usePatientProfile";
 import { getProfileCompletion } from "@/utils/profileCompletion";
 import { uploadFileIfNeeded } from "@/utils/upload";
+import { validatePickedFiles } from "@/utils/fileValidation";
 
 const KENYA_COUNTIES = [
   "Baringo",
@@ -195,7 +196,16 @@ export default function EditProfileScreen() {
           });
 
       if (!result.canceled && result.assets?.length) {
-        setter(result.assets[0].uri);
+        const asset = result.assets[0];
+        const { accepted, rejected, message } = validatePickedFiles([asset], {
+          allowImages: true,
+          maxBytes: 4 * 1024 * 1024,
+        });
+        if (rejected.length) {
+          Alert.alert("Photo rejected", message);
+        }
+        if (!accepted.length) return;
+        setter(accepted[0].uri);
       }
     } catch (error) {
       Alert.alert("Image Error", "Unable to pick image.");

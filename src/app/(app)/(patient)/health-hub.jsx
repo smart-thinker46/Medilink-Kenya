@@ -1,15 +1,18 @@
 import React, { useState } from "react";
-import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert } from "react-native";
+import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert, Linking } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Heart, Shield } from "lucide-react-native";
+import { ArrowLeft, Heart, Shield, Paperclip } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
 import { useAuthStore } from "@/utils/auth/store";
 import apiClient from "@/utils/api";
 import { getFirstName } from "@/utils/greeting";
+import { resolveMediaUrl } from "@/utils/media";
+import { previewReceipt } from "@/utils/receiptExport";
+import { useToast } from "@/components/ToastProvider";
 
 function Section({ title, children, theme }) {
   return (
@@ -45,16 +48,16 @@ export default function PatientHealthHubScreen() {
   const { theme } = useAppTheme();
   const queryClient = useQueryClient();
   const { auth } = useAuthStore();
+  const { showToast } = useToast();
   const firstName = getFirstName(auth?.user, "Patient");
   const patientId = auth?.user?.id;
 
   const [medicationCheckInput, setMedicationCheckInput] = useState("");
-  const [newMedicationName, setNewMedicationName] = useState("");
-  const [newMedicationDosage, setNewMedicationDosage] = useState("");
   const [vitalSystolic, setVitalSystolic] = useState("");
   const [vitalDiastolic, setVitalDiastolic] = useState("");
   const [vitalSugar, setVitalSugar] = useState("");
   const [timelineFilter, setTimelineFilter] = useState("all");
+  const [formFilter, setFormFilter] = useState("all");
 
   const patientDashboardQuery = useQuery({
     queryKey: ["patient-dashboard-insights"],
@@ -115,18 +118,6 @@ export default function PatientHealthHubScreen() {
     },
   });
 
-  const addMedicationMutation = useMutation({
-    mutationFn: (payload) => apiClient.addPatientCarePlanMedication(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["patient-dashboard-insights"] });
-      setNewMedicationName("");
-      setNewMedicationDosage("");
-    },
-    onError: (error) => {
-      Alert.alert("Care Plan", error?.message || "Could not add medication.");
-    },
-  });
-
   const markTakenMutation = useMutation({
     mutationFn: (medicationId) => apiClient.markPatientMedicationTaken(medicationId),
     onSuccess: () => {
@@ -157,6 +148,89 @@ export default function PatientHealthHubScreen() {
   const preventiveReminders = patientInsights.preventiveReminders || [];
   const criticalAlerts = patientInsights.criticalAlerts || [];
   const medicalRecords = medicalRecordsQuery.data?.items || medicalRecordsQuery.data || [];
+  const treatmentForms = medicalRecords.filter((record) =>
+    ["condition", "prescription", "clinical_update"].includes(String(record?.type || "").toLowerCase()),
+  );
+  const formFilters = [
+    { id: "all", label: "All", types: null },
+    { id: "condition", label: "Update Condition", types: ["condition"] },
+    { id: "prescription", label: "Prescription / Medication", types: ["prescription"] },
+    { id: "clinical_update", label: "Full Clinical Record", types: ["clinical_update"] },
+  ];
+  const filteredForms =
+    formFilter === "all"
+      ? treatmentForms
+      : treatmentForms.filter((record) =>
+          (formFilters.find((item) => item.id === formFilter)?.types || []).includes(
+            String(record?.type || "").toLowerCase(),
+          ),
+        );
+
+  const getRecordMeta = (record, kind) => {
+    const attachments = Array.isArray(record?.attachments) ? record.attachments : [];
+    return attachments.find(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        !Array.isArray(item) &&
+        String(item.kind || "") === kind,
+    );
+  };
+
+  const parseNotesField = (notes, prefix) => {
+    const line = String(notes || "")
+      .split("\n")
+      .find((row) => row.toLowerCase().startsWith(prefix));
+    if (!line) return "";
+    return line.replace(new RegExp(`^${prefix}`, "i"), "").trim();
+  };
+
+  const handleOpenAttachment = async (file) => {
+    const url = resolveMediaUrl(file?.url);
+    if (!url) {
+      Alert.alert("Attachment", "Attachment link is unavailable.");
+      return;
+    }
+    try {
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert("Attachment", "Unable to open this file.");
+    }
+  };
+
+  const handleDownloadPaymentReceipt = async (event) => {
+    try {
+      const ref =
+        event?.paymentId ||
+        event?.payment_id ||
+        event?.apiRef ||
+        event?.reference ||
+        event?.ref ||
+        null;
+      let payment = event?.payment || event?.paymentDetails || null;
+      if (!payment && ref) {
+        payment = await apiClient.getPaymentDetails({ apiRef: ref });
+      }
+      if (!payment) {
+        throw new Error("Payment reference is missing for this entry.");
+      }
+      await previewReceipt({
+        payment,
+        payer: {
+          name: payment?.payerName,
+          email: payment?.payerEmail,
+          phone: payment?.payerPhone,
+        },
+        recipient: {
+          name: payment?.recipientName,
+          role: payment?.recipientRole,
+        },
+      });
+      showToast("Receipt downloaded.", "success");
+    } catch (err) {
+      showToast(err?.message || "Failed to download receipt.", "error");
+    }
+  };
   const timelineFilters = [
     { id: "all", label: "All", types: null },
     { id: "records", label: "Records", types: ["MEDICAL_RECORD"] },
@@ -219,83 +293,53 @@ export default function PatientHealthHubScreen() {
               ? new Date(carePlan?.nextFollowUp?.date || carePlan?.nextFollowUp?.createdAt).toLocaleDateString()
               : "Not scheduled"}
           </Text>
-          {(carePlan?.medications || []).slice(0, 4).map((med) => (
-            <View key={med.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.border }}>
-              <Text style={{ color: theme.text, fontSize: 14, fontFamily: "Inter_600SemiBold" }}>{med.name}</Text>
-              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
-                {med.dosage || "As prescribed"} • {med.frequency || "Schedule unavailable"}
-              </Text>
-              <Text style={{ color: theme.textSecondary, fontSize: 11 }}>
-                Taken: {Number(med?.takenCount || 0)} • Missed: {Number(med?.missedCount || 0)}
-              </Text>
-              <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
-                <TouchableOpacity
-                  onPress={() => markTakenMutation.mutate(med.id)}
-                  style={{ backgroundColor: theme.success, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
-                >
-                  <Text style={{ color: "#fff", fontSize: 11, fontFamily: "Inter_600SemiBold" }}>Took</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => markMissedMutation.mutate(med.id)}
-                  style={{ backgroundColor: theme.warning, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
-                >
-                  <Text style={{ color: "#fff", fontSize: 11, fontFamily: "Inter_600SemiBold" }}>Missed</Text>
-                </TouchableOpacity>
+          {(carePlan?.medications || []).slice(0, 4).map((med) => {
+            const timesArray = Array.isArray(med?.takeTimes)
+              ? med.takeTimes.filter(Boolean)
+              : [];
+            const takeTime =
+              timesArray.length > 0
+                ? timesArray.join(", ")
+                : med?.takeTime ||
+                  med?.time ||
+                  (med?.nextDoseAt ? new Date(med.nextDoseAt).toLocaleString() : "");
+            const pillsPerDose =
+              med?.pillsPerDose ?? med?.pills ?? med?.dosage ?? "";
+            return (
+              <View key={med.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.border }}>
+                <Text style={{ color: theme.text, fontSize: 14, fontFamily: "Inter_600SemiBold" }}>{med.name}</Text>
+                <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+                  Take time: {takeTime || "Not set"}
+                </Text>
+                <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+                  Pills per dose: {pillsPerDose || "Not set"}
+                </Text>
+                <Text style={{ color: theme.textSecondary, fontSize: 11, marginTop: 2 }}>
+                  Taken: {Number(med?.takenCount || 0)} • Missed: {Number(med?.missedCount || 0)}
+                </Text>
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+                  <TouchableOpacity
+                    onPress={() => markTakenMutation.mutate(med.id)}
+                    style={{ backgroundColor: theme.success, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
+                  >
+                    <Text style={{ color: "#fff", fontSize: 11, fontFamily: "Inter_600SemiBold" }}>Took</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => markMissedMutation.mutate(med.id)}
+                    style={{ backgroundColor: theme.warning, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
+                  >
+                    <Text style={{ color: "#fff", fontSize: 11, fontFamily: "Inter_600SemiBold" }}>Missed</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
           {(!carePlan?.medications || carePlan.medications.length === 0) && (
             <Text style={{ color: theme.textSecondary, fontSize: 12, marginBottom: 8 }}>No medications in your plan yet.</Text>
           )}
-          <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
-            <TextInput
-              value={newMedicationName}
-              onChangeText={setNewMedicationName}
-              placeholder="Medication name"
-              placeholderTextColor={theme.textSecondary}
-              style={{
-                flex: 1,
-                borderWidth: 1,
-                borderColor: theme.border,
-                borderRadius: 10,
-                height: 40,
-                paddingHorizontal: 10,
-                color: theme.text,
-                backgroundColor: theme.surface,
-              }}
-            />
-            <TextInput
-              value={newMedicationDosage}
-              onChangeText={setNewMedicationDosage}
-              placeholder="Dosage"
-              placeholderTextColor={theme.textSecondary}
-              style={{
-                width: 90,
-                borderWidth: 1,
-                borderColor: theme.border,
-                borderRadius: 10,
-                height: 40,
-                paddingHorizontal: 10,
-                color: theme.text,
-                backgroundColor: theme.surface,
-              }}
-            />
-            <TouchableOpacity
-              onPress={() => {
-                if (!newMedicationName.trim()) {
-                  Alert.alert("Care Plan", "Enter medication name.");
-                  return;
-                }
-                addMedicationMutation.mutate({
-                  name: newMedicationName.trim(),
-                  dosage: newMedicationDosage.trim(),
-                });
-              }}
-              style={{ backgroundColor: theme.primary, borderRadius: 10, paddingHorizontal: 12, justifyContent: "center" }}
-            >
-              <Text style={{ color: "#fff", fontSize: 12, fontFamily: "Inter_600SemiBold" }}>Add</Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 10 }}>
+            Your care plan is managed by your medic or hospital.
+          </Text>
         </Section>
 
         <Section title="Medication Safety" theme={theme}>
@@ -448,6 +492,192 @@ export default function PatientHealthHubScreen() {
           </TouchableOpacity>
         </Section>
 
+        <Section title="Treatment Forms" theme={theme}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              {formFilters.map((filter) => {
+                const active = formFilter === filter.id;
+                return (
+                  <TouchableOpacity
+                    key={filter.id}
+                    onPress={() => setFormFilter(filter.id)}
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 999,
+                      backgroundColor: active ? theme.primary : theme.surface,
+                      borderWidth: 1,
+                      borderColor: active ? theme.primary : theme.border,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: active ? "#fff" : theme.textSecondary,
+                        fontSize: 11,
+                        fontFamily: "Inter_600SemiBold",
+                      }}
+                    >
+                      {filter.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </ScrollView>
+          {filteredForms.length === 0 ? (
+            <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+              No treatment forms for this filter.
+            </Text>
+          ) : (
+            filteredForms.slice(0, 6).map((record) => {
+              const type = String(record.type || "").toLowerCase();
+              const createdAt = record.createdAt ? new Date(record.createdAt).toLocaleString() : "";
+              const medicName = record.medic?.fullName || "Medic";
+              const clinicalMeta = getRecordMeta(record, "clinical_meta");
+              const prescriptionMeta = getRecordMeta(record, "prescription_meta");
+              const medications =
+                Array.isArray(prescriptionMeta?.medications) && prescriptionMeta.medications.length
+                  ? prescriptionMeta.medications
+                  : String(record.notes || "")
+                      .split(",")
+                      .map((item) => item.trim())
+                      .filter(Boolean);
+              const diagnosis =
+                clinicalMeta?.diagnosis ||
+                parseNotesField(record.notes, "Diagnosis:");
+              const progress =
+                clinicalMeta?.progress ||
+                parseNotesField(record.notes, "Progress:");
+              const healthIssues =
+                clinicalMeta?.healthIssues ||
+                parseNotesField(record.notes, "Health Issues:");
+              const treatmentPlan =
+                clinicalMeta?.treatmentPlan ||
+                parseNotesField(record.notes, "Treatment Plan:");
+              const prescribedMedicines =
+                Array.isArray(clinicalMeta?.prescribedMedicines) && clinicalMeta.prescribedMedicines.length
+                  ? clinicalMeta.prescribedMedicines
+                  : parseNotesField(record.notes, "Prescribed medicines:")
+                      .split(",")
+                      .map((item) => item.trim())
+                      .filter(Boolean);
+
+              return (
+                <View
+                  key={record.id}
+                  style={{
+                    paddingVertical: 10,
+                    borderBottomWidth: 1,
+                    borderBottomColor: theme.border,
+                  }}
+                >
+                  <Text style={{ color: theme.text, fontSize: 13, fontFamily: "Inter_600SemiBold" }}>
+                    {type === "prescription"
+                      ? "Prescription / Medication"
+                      : type === "condition"
+                        ? "Update Condition"
+                        : "Full Clinical Record"}
+                  </Text>
+                  <Text style={{ color: theme.textSecondary, fontSize: 11 }}>
+                    {medicName} {createdAt ? `• ${createdAt}` : ""}
+                  </Text>
+                  {type === "condition" && (
+                    <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 6 }}>
+                      {record.condition || record.notes || "Condition update recorded."}
+                    </Text>
+                  )}
+                  {type === "prescription" && (
+                    <View style={{ marginTop: 6 }}>
+                      <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+                        Medications: {medications.length ? medications.join(", ") : "Not specified"}
+                      </Text>
+                      {(prescriptionMeta?.dosage || prescriptionMeta?.frequency || prescriptionMeta?.duration) && (
+                        <Text style={{ color: theme.textSecondary, fontSize: 11, marginTop: 2 }}>
+                          {prescriptionMeta?.dosage ? `Dosage: ${prescriptionMeta.dosage}` : ""}
+                          {prescriptionMeta?.frequency ? ` • Frequency: ${prescriptionMeta.frequency}` : ""}
+                          {prescriptionMeta?.duration ? ` • Duration: ${prescriptionMeta.duration}` : ""}
+                        </Text>
+                      )}
+                    </View>
+                  )}
+                  {type === "clinical_update" && (
+                    <View style={{ marginTop: 6, gap: 4 }}>
+                      {diagnosis ? (
+                        <Text style={{ color: theme.textSecondary, fontSize: 12 }}>Diagnosis: {diagnosis}</Text>
+                      ) : null}
+                      {progress ? (
+                        <Text style={{ color: theme.textSecondary, fontSize: 12 }}>Progress: {progress}</Text>
+                      ) : null}
+                      {healthIssues ? (
+                        <Text style={{ color: theme.textSecondary, fontSize: 12 }}>Issues: {healthIssues}</Text>
+                      ) : null}
+                      {treatmentPlan ? (
+                        <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+                          Treatment Plan: {treatmentPlan}
+                        </Text>
+                      ) : null}
+                      {prescribedMedicines.length ? (
+                        <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+                          Prescribed: {prescribedMedicines.join(", ")}
+                        </Text>
+                      ) : null}
+                      {!diagnosis && !progress && !healthIssues && !treatmentPlan && !prescribedMedicines.length ? (
+                        <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+                          {record.notes || "Clinical update recorded."}
+                        </Text>
+                      ) : null}
+                    </View>
+                  )}
+                  {Array.isArray(record?.attachments) &&
+                    record.attachments.filter((file) => file?.url).length > 0 && (
+                      <View style={{ marginTop: 8 }}>
+                        <Text style={{ color: theme.textSecondary, fontSize: 11, marginBottom: 6 }}>
+                          Attachments
+                        </Text>
+                        {record.attachments
+                          .filter((file) => file?.url)
+                          .slice(0, 3)
+                          .map((file, idx) => (
+                            <TouchableOpacity
+                              key={`${record.id}-att-${idx}`}
+                              onPress={() => handleOpenAttachment(file)}
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 6,
+                                backgroundColor: theme.surface,
+                                borderRadius: 10,
+                                borderWidth: 1,
+                                borderColor: theme.border,
+                                paddingVertical: 6,
+                                paddingHorizontal: 10,
+                                marginBottom: 6,
+                              }}
+                            >
+                              <Paperclip color={theme.iconColor} size={14} />
+                              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+                                {file.name || "Attachment"}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                      </View>
+                    )}
+                </View>
+              );
+            })
+          )}
+          {filteredForms.length > 6 && (
+            <TouchableOpacity
+              onPress={() => router.push("/(app)/(patient)/medical-history")}
+              style={{ marginTop: 10, alignSelf: "flex-start" }}
+            >
+              <Text style={{ color: theme.primary, fontSize: 12, fontFamily: "Inter_600SemiBold" }}>
+                View all treatment forms
+              </Text>
+            </TouchableOpacity>
+          )}
+        </Section>
+
         <Section title="Visit Timeline" theme={theme}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
             <View style={{ flexDirection: "row", gap: 8 }}>
@@ -484,7 +714,9 @@ export default function PatientHealthHubScreen() {
             <Text style={{ color: theme.textSecondary, fontSize: 12 }}>No timeline entries yet.</Text>
           ) : (
             filteredTimeline.slice(0, 5).map((event) => {
-            const isRecord = String(event?.type || "").toUpperCase() === "MEDICAL_RECORD";
+            const eventType = String(event?.type || "").toUpperCase();
+            const isRecord = eventType === "MEDICAL_RECORD";
+            const isPayment = eventType === "PAYMENT";
             const recordType = (event?.recordType || event?.title || "Medical Record")
               .toString()
               .replace(/_/g, " ")
@@ -499,6 +731,16 @@ export default function PatientHealthHubScreen() {
                 <Text style={{ color: theme.textTertiary, fontSize: 11 }}>
                   {new Date(event.date || Date.now()).toLocaleString()}
                 </Text>
+                {isPayment ? (
+                  <TouchableOpacity
+                    onPress={() => handleDownloadPaymentReceipt(event)}
+                    style={{ marginTop: 6, alignSelf: "flex-start" }}
+                  >
+                    <Text style={{ color: theme.primary, fontSize: 12, fontFamily: "Inter_600SemiBold" }}>
+                      Preview Receipt
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             );
           })

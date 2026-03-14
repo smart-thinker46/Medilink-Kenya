@@ -6,11 +6,14 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
 import apiClient from "@/utils/api";
+import { previewReceipt } from "@/utils/receiptExport";
+import { useToast } from "@/components/ToastProvider";
 
 export default function PaymentResultScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
   const { theme } = useAppTheme();
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [payment, setPayment] = useState(null);
   const [error, setError] = useState(null);
@@ -115,6 +118,33 @@ export default function PaymentResultScreen() {
   };
 
   const description = payment?.description || payment?.reason || payment?.comment || messageParam;
+
+  const handleDownloadReceipt = async () => {
+    try {
+      if (!payment) {
+        throw new Error("Payment details not available yet.");
+      }
+      const status = String(payment?.status || "").toUpperCase();
+      if (status !== "PAID") {
+        throw new Error("Receipt is available after payment is completed.");
+      }
+      await previewReceipt({
+        payment,
+        payer: {
+          name: payment?.payerName,
+          email: payment?.payerEmail,
+          phone: payment?.payerPhone,
+        },
+        recipient: {
+          name: payment?.recipientName,
+          role: payment?.recipientRole,
+        },
+      });
+      showToast("Receipt downloaded.", "success");
+    } catch (err) {
+      showToast(err?.message || "Failed to download receipt.", "error");
+    }
+  };
 
   return (
     <ScreenLayout>
@@ -290,6 +320,29 @@ export default function PaymentResultScreen() {
                     Finalize Appointment
                   </Text>
                 )}
+              </TouchableOpacity>
+            ) : null}
+
+            {payment ? (
+              <TouchableOpacity
+                style={{
+                  marginTop: 8,
+                  backgroundColor: theme.primary,
+                  borderRadius: 12,
+                  paddingVertical: 10,
+                  alignItems: "center",
+                }}
+                onPress={handleDownloadReceipt}
+              >
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontFamily: "Inter_600SemiBold",
+                    color: "#FFFFFF",
+                  }}
+                >
+                  Preview Receipt
+                </Text>
               </TouchableOpacity>
             ) : null}
 

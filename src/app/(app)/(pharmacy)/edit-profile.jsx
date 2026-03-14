@@ -21,6 +21,7 @@ import LocationPickerField from "@/components/LocationPickerField";
 import { useAppTheme } from "@/components/ThemeProvider";
 import { usePharmacyProfile } from "@/utils/usePharmacyProfile";
 import { uploadFileIfNeeded } from "@/utils/upload";
+import { validatePickedFiles } from "@/utils/fileValidation";
 
 export default function PharmacyEditProfileScreen() {
   const router = useRouter();
@@ -32,7 +33,6 @@ export default function PharmacyEditProfileScreen() {
     pharmacyName: "",
     pharmacyType: "",
     registrationNumber: "",
-    adminName: "",
     ownerName: "",
     ownerPhone: "",
     ownerEmail: "",
@@ -57,11 +57,9 @@ export default function PharmacyEditProfileScreen() {
 
   const [profilePhoto, setProfilePhoto] = useState(null);
   const [licensePhoto, setLicensePhoto] = useState(null);
-  const [adminIdPhoto, setAdminIdPhoto] = useState(null);
   const [ownerIdFront, setOwnerIdFront] = useState(null);
   const [ownerIdBack, setOwnerIdBack] = useState(null);
   const [licenseName, setLicenseName] = useState("");
-  const [adminIdName, setAdminIdName] = useState("");
   const [ownerIdFrontName, setOwnerIdFrontName] = useState("");
   const [ownerIdBackName, setOwnerIdBackName] = useState("");
 
@@ -72,9 +70,6 @@ export default function PharmacyEditProfileScreen() {
         pharmacyName: profile.pharmacyName || "",
         pharmacyType: profile.pharmacyType || "",
         registrationNumber: profile.registrationNumber || "",
-        adminName:
-          profile.adminName ||
-          `${profile.firstName || ""} ${profile.lastName || ""}`.trim(),
         ownerName: profile.ownerName || "",
         ownerPhone: profile.ownerPhone || "",
         ownerEmail: profile.ownerEmail || "",
@@ -110,11 +105,9 @@ export default function PharmacyEditProfileScreen() {
 
       setProfilePhoto(profile.profilePhoto || profile.photoUrl || null);
       setLicensePhoto(profile.licenseUrl || profile.license || null);
-      setAdminIdPhoto(profile.adminIdUrl || profile.adminId || null);
       setOwnerIdFront(profile.ownerIdFront || profile.ownerIdFrontUrl || null);
       setOwnerIdBack(profile.ownerIdBack || profile.ownerIdBackUrl || null);
       setLicenseName(profile.licenseName || "");
-      setAdminIdName(profile.adminIdName || "");
       setOwnerIdFrontName(profile.ownerIdFrontName || "");
       setOwnerIdBackName(profile.ownerIdBackName || "");
     }
@@ -141,7 +134,16 @@ export default function PharmacyEditProfileScreen() {
           });
 
       if (!result.canceled && result.assets?.length) {
-        setter(result.assets[0].uri);
+        const asset = result.assets[0];
+        const { accepted, rejected, message } = validatePickedFiles([asset], {
+          allowImages: true,
+          maxBytes: 4 * 1024 * 1024,
+        });
+        if (rejected.length) {
+          Alert.alert("Photo rejected", message);
+        }
+        if (!accepted.length) return;
+        setter(accepted[0].uri);
       }
     } catch (error) {
       Alert.alert("Image Error", "Unable to pick image.");
@@ -176,7 +178,6 @@ export default function PharmacyEditProfileScreen() {
     try {
       const uploadedProfilePhoto = await uploadFileIfNeeded(profilePhoto, { kind: "image" });
       const uploadedLicense = await uploadFileIfNeeded(licensePhoto, { kind: "document" });
-      const uploadedAdminId = await uploadFileIfNeeded(adminIdPhoto, { kind: "document" });
       const uploadedOwnerIdFront = await uploadFileIfNeeded(ownerIdFront, { kind: "document" });
       const uploadedOwnerIdBack = await uploadFileIfNeeded(ownerIdBack, { kind: "document" });
       const deliveryAvailable = String(formData.deliveryAvailable).toLowerCase() === "true";
@@ -185,7 +186,6 @@ export default function PharmacyEditProfileScreen() {
         pharmacyName: formData.pharmacyName,
         pharmacyType: formData.pharmacyType,
         registrationNumber: formData.registrationNumber,
-        adminName: formData.adminName,
         ownerName: formData.ownerName,
         ownerPhone: formData.ownerPhone,
         ownerEmail: formData.ownerEmail,
@@ -219,9 +219,6 @@ export default function PharmacyEditProfileScreen() {
         license: uploadedLicense,
         licenseUrl: uploadedLicense,
         licenseName: licenseName || undefined,
-        adminId: uploadedAdminId,
-        adminIdUrl: uploadedAdminId,
-        adminIdName: adminIdName || undefined,
         ownerIdFront: uploadedOwnerIdFront,
         ownerIdBack: uploadedOwnerIdBack,
         ownerIdFrontName: ownerIdFrontName || undefined,
@@ -428,14 +425,6 @@ export default function PharmacyEditProfileScreen() {
             required
           />
           <Input
-            label="Admin Name"
-            value={formData.adminName}
-            onChangeText={(value) =>
-              setFormData((prev) => ({ ...prev, adminName: value }))
-            }
-            required
-          />
-          <Input
             label="Owner Name"
             value={formData.ownerName}
             onChangeText={(value) =>
@@ -465,15 +454,6 @@ export default function PharmacyEditProfileScreen() {
               required
             />
           </View>
-          <Input
-            label="Phone"
-            value={formData.phone}
-            onChangeText={(value) =>
-              setFormData((prev) => ({ ...prev, phone: value }))
-            }
-            keyboardType="phone-pad"
-            required
-          />
           <View style={{ flexDirection: "row", gap: 12 }}>
             <Input
               label="County"
@@ -654,30 +634,6 @@ export default function PharmacyEditProfileScreen() {
                   }}
                 >
                   {licenseName || (licensePhoto ? "License selected" : "Upload License")}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: theme.border,
-                  backgroundColor: theme.surface,
-                  padding: 12,
-                  alignItems: "center",
-                }}
-                onPress={() => handleDocumentPick(setAdminIdPhoto, setAdminIdName)}
-              >
-                <Text
-                  style={{
-                    fontSize: 12,
-                    fontFamily: "Inter_500Medium",
-                    color: theme.textSecondary,
-                    textAlign: "center",
-                  }}
-                >
-                  {adminIdName || (adminIdPhoto ? "Admin ID selected" : "Upload Admin ID")}
                 </Text>
               </TouchableOpacity>
             </View>

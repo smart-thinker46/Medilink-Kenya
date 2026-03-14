@@ -10,6 +10,7 @@ import {
   Alert,
   Image,
   Modal,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MotiView } from "moti";
@@ -45,6 +46,9 @@ export default function PharmacyScreen() {
   const { theme, isDark } = useAppTheme();
   const { formatCurrency } = useI18n();
   const { showToast } = useToast();
+  const isWeb = Platform.OS === "web";
+  const [page, setPage] = useState(1);
+  const pageSize = 8;
   const [showPharmacyPicker, setShowPharmacyPicker] = useState(false);
   const [pharmacySearchQuery, setPharmacySearchQuery] = useState("");
   const prescriptionIdParam = Array.isArray(params?.prescriptionId)
@@ -174,6 +178,38 @@ export default function PharmacyScreen() {
     const matchesLocation = !locationFilter || pharmacyLocation.includes(locationFilter.toLowerCase());
     return matchesSearch && matchesCategory && matchesLocation && matchesPharmacy;
   });
+
+  const totalPages = useMemo(
+    () => (isWeb ? Math.max(1, Math.ceil(filteredProducts.length / pageSize)) : 1),
+    [filteredProducts.length, isWeb],
+  );
+
+  useEffect(() => {
+    if (!isWeb) return;
+    if (page > totalPages) {
+      setPage(totalPages);
+    } else if (page < 1) {
+      setPage(1);
+    }
+  }, [page, totalPages, isWeb]);
+
+  useEffect(() => {
+    if (!isWeb || totalPages <= 1) return;
+    const handleKey = (event) => {
+      if (event.key === "ArrowLeft") {
+        setPage((prev) => Math.max(1, prev - 1));
+      }
+      if (event.key === "ArrowRight") {
+        setPage((prev) => Math.min(totalPages, prev + 1));
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [isWeb, totalPages]);
+
+  const pagedProducts = isWeb
+    ? filteredProducts.slice((page - 1) * pageSize, page * pageSize)
+    : filteredProducts;
 
   const pharmacyOptions = useMemo(() => {
     const map = new Map();
@@ -319,13 +355,22 @@ export default function PharmacyScreen() {
           duration: 600,
           delay: index * 100,
         }}
-        style={{ marginBottom: 16 }}
+        style={{
+          marginBottom: isWeb ? 0 : 16,
+          width: isWeb ? "25%" : "100%",
+          padding: isWeb ? 12 : 0,
+          flexBasis: isWeb ? "25%" : undefined,
+          maxWidth: isWeb ? 300 : "100%",
+          minWidth: isWeb ? 220 : undefined,
+          flexGrow: isWeb ? 1 : 0,
+        }}
       >
         <TouchableOpacity
           style={{
+            width: "100%",
             backgroundColor: theme.card,
             borderRadius: 16,
-            padding: 16,
+            padding: isWeb ? 18 : 16,
             borderWidth: 1,
             borderColor: theme.border,
             shadowColor: "#000",
@@ -334,6 +379,7 @@ export default function PharmacyScreen() {
             shadowRadius: 8,
             elevation: 4,
             opacity: item.inStock ? 1 : 0.6,
+            minHeight: isWeb ? 380 : undefined,
           }}
           activeOpacity={0.8}
           onPress={() => {
@@ -348,15 +394,16 @@ export default function PharmacyScreen() {
             router.push(`/(app)/(patient)/product/${item.id}`);
           }}
         >
-          <View style={{ flexDirection: "row" }}>
+          <View style={{ flexDirection: isWeb ? "column" : "row" }}>
             {/* Product Image */}
             <View
               style={{
-                width: 80,
-                height: 80,
+                width: isWeb ? "100%" : 80,
+                height: isWeb ? 180 : 80,
                 borderRadius: 12,
                 backgroundColor: theme.surface,
-                marginRight: 16,
+                marginRight: isWeb ? 0 : 16,
+                marginBottom: isWeb ? 12 : 0,
                 justifyContent: "center",
                 alignItems: "center",
                 overflow: "hidden",
@@ -1071,12 +1118,24 @@ export default function PharmacyScreen() {
 
         {/* Products List */}
         <FlatList
-          data={filteredProducts}
+          data={pagedProducts}
           renderItem={renderProductCard}
           keyExtractor={(item) => item.id}
+          style={{ width: "100%" }}
           contentContainerStyle={{
             paddingHorizontal: 24,
             paddingBottom: 100,
+            ...(isWeb
+              ? {
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  alignItems: "stretch",
+                  justifyContent: "flex-start",
+                  columnGap: 16,
+                  rowGap: 16,
+                  width: "100%",
+                }
+              : null),
           }}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={() => (
@@ -1158,6 +1217,89 @@ export default function PharmacyScreen() {
             </MotiView>
           )}
         />
+        {isWeb && totalPages > 1 ? (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingHorizontal: 24,
+              paddingBottom: 24,
+            }}
+          >
+            <TouchableOpacity
+              onPress={() => setPage((prev) => Math.max(1, prev - 1))}
+              disabled={page <= 1}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: page <= 1 ? theme.surface : theme.card,
+                opacity: page <= 1 ? 0.6 : 1,
+              }}
+            >
+              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>Previous</Text>
+            </TouchableOpacity>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              {(() => {
+                const maxButtons = 7;
+                const half = Math.floor(maxButtons / 2);
+                let start = Math.max(1, page - half);
+                let end = Math.min(totalPages, start + maxButtons - 1);
+                if (end - start + 1 < maxButtons) {
+                  start = Math.max(1, end - maxButtons + 1);
+                }
+                const pages = [];
+                for (let i = start; i <= end; i += 1) pages.push(i);
+                return pages.map((pg) => {
+                  const active = pg === page;
+                  return (
+                    <TouchableOpacity
+                      key={`page-${pg}`}
+                      onPress={() => setPage(pg)}
+                      style={{
+                        minWidth: 28,
+                        paddingHorizontal: 8,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: active ? theme.primary : theme.border,
+                        backgroundColor: active ? `${theme.primary}22` : theme.card,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: active ? theme.primary : theme.textSecondary,
+                          fontSize: 12,
+                          textAlign: "center",
+                        }}
+                      >
+                        {pg}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                });
+              })()}
+            </View>
+            <TouchableOpacity
+              onPress={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={page >= totalPages}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: page >= totalPages ? theme.surface : theme.card,
+                opacity: page >= totalPages ? 0.6 : 1,
+              }}
+            >
+              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>Next</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {/* Cart Button */}
         {getTotalCartItems() > 0 && (

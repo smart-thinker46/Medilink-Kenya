@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Dimensions,
   ImageBackground,
   Platform,
+  Animated,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -42,6 +43,9 @@ export default function WelcomeScreen() {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useAppTheme();
   const { t, language, setLanguage } = useI18n();
+  const [actionsHidden, setActionsHidden] = useState(false);
+  const actionsAnim = useRef(new Animated.Value(0)).current;
+  const scrollTimeoutRef = useRef(null);
 
   const features = [
     {
@@ -76,6 +80,32 @@ export default function WelcomeScreen() {
     { icon: Users, text: "Trusted Network" },
   ];
 
+  useEffect(() => {
+    Animated.timing(actionsAnim, {
+      toValue: actionsHidden ? 1 : 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [actionsHidden, actionsAnim]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleScrollActivity = () => {
+    setActionsHidden(true);
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+    scrollTimeoutRef.current = setTimeout(() => {
+      setActionsHidden(false);
+    }, 200);
+  };
+
   return (
     <View style={{ flex: 1 }}>
       <StatusBar style={isDark ? "light" : "dark"} />
@@ -90,6 +120,12 @@ export default function WelcomeScreen() {
           }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          onScrollBeginDrag={() => setActionsHidden(true)}
+          onScrollEndDrag={() => setActionsHidden(false)}
+          onMomentumScrollBegin={() => setActionsHidden(true)}
+          onMomentumScrollEnd={() => setActionsHidden(false)}
+          onScroll={handleScrollActivity}
+          scrollEventThrottle={16}
         >
           <View style={{ flexDirection: "row", justifyContent: "flex-end", marginBottom: 16 }}>
             {["en", "sw"].map((option) => (
@@ -202,6 +238,16 @@ export default function WelcomeScreen() {
                   }}
                 >
                   {t("welcome_tagline")}
+                </Text>
+                <Text
+                  style={{
+                    marginTop: 10,
+                    fontSize: 13,
+                    fontFamily: "Inter_500Medium",
+                    color: "rgba(255,255,255,0.9)",
+                  }}
+                >
+                  Book care, order medicine, and manage staff in one secure hub.
                 </Text>
               </LinearGradient>
             </ImageBackground>
@@ -387,14 +433,28 @@ export default function WelcomeScreen() {
                 </View>
               ))}
             </View>
+            <View style={{ marginTop: 14 }}>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, textAlign: "center" }}>
+                Built for clinics, hospitals, medics, and pharmacies across Kenya.
+              </Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, textAlign: "center", marginTop: 4 }}>
+                Verified profiles, smart search, and instant communication keep care moving.
+              </Text>
+            </View>
           </MotiView>
+
+          <View style={{ marginTop: 28, alignItems: "center" }}>
+            <Text style={{ fontSize: 12, color: theme.textSecondary, textAlign: "center" }}>
+              Need help? Contact Medilink Kenya
+            </Text>
+            <Text style={{ fontSize: 12, color: theme.textSecondary, textAlign: "center", marginTop: 4 }}>
+              support@medilink.co.ke • +254 700 000 000
+            </Text>
+          </View>
         </ScrollView>
 
         {/* Bottom Actions */}
-        <MotiView
-          from={{ opacity: 0, translateY: 40 }}
-          animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: "timing", duration: 700, delay: 700 }}
+        <Animated.View
           style={{
             position: "absolute",
             left: 0,
@@ -402,6 +462,18 @@ export default function WelcomeScreen() {
             bottom: 0,
             paddingHorizontal: 20,
             paddingBottom: insets.bottom + 20,
+            opacity: actionsAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [1, 0],
+            }),
+            transform: [
+              {
+                translateY: actionsAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, 60],
+                }),
+              },
+            ],
           }}
         >
           <View
@@ -479,7 +551,7 @@ export default function WelcomeScreen() {
               By continuing, you agree to our Terms and Privacy Policy
             </Text>
           </View>
-        </MotiView>
+        </Animated.View>
       </LinearGradient>
     </View>
   );

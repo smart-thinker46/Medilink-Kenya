@@ -26,6 +26,7 @@ import { useChatSocket } from "@/utils/useChatSocket";
 import { enqueueMessage } from "@/utils/messageQueue";
 import { useI18n } from "@/utils/i18n";
 import { canContact, normalizeRole } from "@/utils/communicationRules";
+import { validatePickedFiles } from "@/utils/fileValidation";
 import UserAvatar from "@/components/UserAvatar";
 
 export default function ChatScreen() {
@@ -117,10 +118,22 @@ export default function ChatScreen() {
       if (!asset?.uri) {
         throw new Error("No audio file selected.");
       }
+      const { accepted, rejected, message } = validatePickedFiles([asset], {
+        allowAudio: true,
+        maxBytes: 4 * 1024 * 1024,
+      });
+      if (rejected.length) {
+        Alert.alert("Attachment rejected", message);
+      }
+      const chosen = accepted[0];
+      if (!chosen?.uri) {
+        showToast("No valid audio selected.", "warning");
+        return null;
+      }
       return apiClient.aiVoiceStt({
-        uri: asset.uri,
-        name: asset.name || "voice.wav",
-        type: asset.mimeType || "audio/wav",
+        uri: chosen.uri,
+        name: chosen.name || "voice.wav",
+        type: chosen.mimeType || chosen.type || "audio/wav",
         language: sttLanguage.trim().toLowerCase() === "auto" ? "" : sttLanguage.trim(),
         translate: translateTranscript,
         targetLanguage: translateTargetLanguage.trim().toLowerCase() || "en",

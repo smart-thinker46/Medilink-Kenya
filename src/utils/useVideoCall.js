@@ -7,7 +7,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/utils/auth/store";
 import ApiClient from "@/utils/api";
 import { canContact, normalizeRole } from "@/utils/communicationRules";
-import { exportReceipt } from "@/utils/receiptExport";
 import { addCallKeepListeners, showIncomingCall, endIncomingCall } from "@/utils/callkeep";
 
 export const useVideoCall = () => {
@@ -219,22 +218,10 @@ export const useVideoCall = () => {
               type: "VIDEO_CALL",
               minutes,
               phone: auth?.user?.phone,
+              recipientName: callData?.participantName,
+              recipientRole: callData?.participantRole,
             });
             paymentId = payment?.id;
-            if (payment) {
-              try {
-                await exportReceipt({
-                  payment,
-                  payer: { email: payment.payerEmail },
-                  recipient: {
-                    name: callData?.participantName,
-                    role: callData?.participantRole,
-                  },
-                });
-              } catch {
-                // ignore receipt failures
-              }
-            }
           }
         }
 

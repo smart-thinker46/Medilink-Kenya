@@ -21,6 +21,7 @@ import LocationPickerField from "@/components/LocationPickerField";
 import { useAppTheme } from "@/components/ThemeProvider";
 import { useMedicProfile } from "@/utils/useMedicProfile";
 import { uploadFileIfNeeded } from "@/utils/upload";
+import { validatePickedFiles } from "@/utils/fileValidation";
 
 export default function MedicEditProfileScreen() {
   const router = useRouter();
@@ -62,13 +63,11 @@ export default function MedicEditProfileScreen() {
 
   const [profilePhoto, setProfilePhoto] = useState(null);
   const [licensePhoto, setLicensePhoto] = useState(null);
-  const [idPhoto, setIdPhoto] = useState(null);
   const [idFront, setIdFront] = useState(null);
   const [idBack, setIdBack] = useState(null);
   const [cvFile, setCvFile] = useState(null);
   const [cvFileName, setCvFileName] = useState("");
   const [licenseName, setLicenseName] = useState("");
-  const [idName, setIdName] = useState("");
   const [idFrontName, setIdFrontName] = useState("");
   const [idBackName, setIdBackName] = useState("");
 
@@ -124,12 +123,10 @@ export default function MedicEditProfileScreen() {
         profile.profilePhoto || profile.avatarUrl || profile.photoUrl || null,
       );
       setLicensePhoto(profile.licenseUrl || profile.license || null);
-      setIdPhoto(profile.idPhotoUrl || profile.idPhoto || null);
       setIdFront(profile.idFront || profile.idFrontUrl || null);
       setIdBack(profile.idBack || profile.idBackUrl || null);
       setCvFile(profile.cvUrl || profile.cv || null);
       setLicenseName(profile.licenseName || "");
-      setIdName(profile.idName || "");
       setIdFrontName(profile.idFrontName || "");
       setIdBackName(profile.idBackName || "");
       setCvFileName(profile.cvName || "");
@@ -157,7 +154,16 @@ export default function MedicEditProfileScreen() {
           });
 
       if (!result.canceled && result.assets?.length) {
-        setter(result.assets[0].uri);
+        const asset = result.assets[0];
+        const { accepted, rejected, message } = validatePickedFiles([asset], {
+          allowImages: true,
+          maxBytes: 4 * 1024 * 1024,
+        });
+        if (rejected.length) {
+          Alert.alert("Photo rejected", message);
+        }
+        if (!accepted.length) return;
+        setter(accepted[0].uri);
       }
     } catch (error) {
       Alert.alert("Image Error", "Unable to pick image.");
@@ -239,9 +245,6 @@ export default function MedicEditProfileScreen() {
       const uploadedLicense = await uploadFileIfNeeded(licensePhoto, {
         kind: resolveUploadKind(licensePhoto, licenseName),
       });
-      const uploadedId = await uploadFileIfNeeded(idPhoto, {
-        kind: resolveUploadKind(idPhoto, idName),
-      });
       const uploadedCv = await uploadFileIfNeeded(cvFile, { kind: "document" });
 
       const payload = {
@@ -300,9 +303,6 @@ export default function MedicEditProfileScreen() {
         license: uploadedLicense,
         licenseUrl: uploadedLicense,
         licenseName: licenseName || undefined,
-        idPhoto: uploadedId || undefined,
-        idPhotoUrl: uploadedId || undefined,
-        idName: idName || undefined,
         idFront: idFront ? await uploadFileIfNeeded(idFront, { kind: resolveUploadKind(idFront, idFrontName) }) : undefined,
         idBack: idBack ? await uploadFileIfNeeded(idBack, { kind: resolveUploadKind(idBack, idBackName) }) : undefined,
         idFrontName: idFrontName || undefined,
@@ -754,10 +754,10 @@ export default function MedicEditProfileScreen() {
               Verification Documents
             </Text>
 
-            <View style={{ flexDirection: "row", gap: 12 }}>
+            <View style={{ marginBottom: 12 }}>
               <TouchableOpacity
                 style={{
-                  flex: 1,
+                  width: "100%",
                   borderRadius: 12,
                   borderWidth: 1,
                   borderColor: theme.border,
@@ -778,32 +778,8 @@ export default function MedicEditProfileScreen() {
                   {licenseName || (licensePhoto ? "License selected" : "Upload License")}
                 </Text>
               </TouchableOpacity>
-
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: theme.border,
-                  backgroundColor: theme.surface,
-                  padding: 12,
-                  alignItems: "center",
-                }}
-                onPress={() => handleDocumentPick(setIdPhoto, setIdName)}
-              >
-                <Text
-                  style={{
-                    fontSize: 12,
-                    fontFamily: "Inter_500Medium",
-                    color: theme.textSecondary,
-                    textAlign: "center",
-                  }}
-                >
-                  {idName || (idPhoto ? "ID selected" : "Upload ID")}
-                </Text>
-              </TouchableOpacity>
             </View>
-            <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
+            <View style={{ flexDirection: "row", gap: 12 }}>
               <TouchableOpacity
                 style={{
                   flex: 1,

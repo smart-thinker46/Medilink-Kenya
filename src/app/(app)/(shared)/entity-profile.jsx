@@ -6,11 +6,12 @@ import {
   ActivityIndicator,
   ScrollView,
   Linking,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, MapPin, Phone, Mail, MessageCircle, CalendarDays, ShoppingBag } from "lucide-react-native";
+import { ArrowLeft, MapPin, Phone, Mail, MessageCircle, CalendarDays, ShoppingBag, Video } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -18,6 +19,7 @@ import { useToast } from "@/components/ToastProvider";
 import apiClient from "@/utils/api";
 import { useAuthStore } from "@/utils/auth/store";
 import { getDistanceKm, getExternalMapUrl, normalizeLocation } from "@/utils/locationHelpers";
+import { useVideoCallContext as useVideoCall } from "@/utils/videoCallContext";
 
 const normalizeRole = (value) => String(value || "").trim().toUpperCase();
 
@@ -39,6 +41,7 @@ export default function EntityProfileScreen() {
   const { theme } = useAppTheme();
   const { showToast } = useToast();
   const { auth } = useAuthStore();
+  const { initiateCall } = useVideoCall();
   const params = useLocalSearchParams();
   const userId = String(resolveParam(params?.userId) || "").trim();
   const roleHint = normalizeRole(resolveParam(params?.role));
@@ -115,6 +118,40 @@ export default function EntityProfileScreen() {
       return;
     }
     router.push(getChatRoute(viewerRole, userId));
+  };
+
+  const handleCall = () => {
+    if (!userId) {
+      showToast("Invalid user profile.", "warning");
+      return;
+    }
+    Alert.alert("Start Call", "Choose call type", [
+      {
+        text: "Audio",
+        onPress: () =>
+          initiateCall({
+            participantId: userId,
+            participantName: entity?.name || "Patient",
+            participantRole: "Patient",
+            type: "consultation",
+            role: "host",
+            mode: "audio",
+          }),
+      },
+      {
+        text: "Video",
+        onPress: () =>
+          initiateCall({
+            participantId: userId,
+            participantName: entity?.name || "Patient",
+            participantRole: "Patient",
+            type: "consultation",
+            role: "host",
+            mode: "video",
+          }),
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
   };
 
   const handlePrimaryAction = () => {
@@ -313,6 +350,27 @@ export default function EntityProfileScreen() {
                   Open Chat
                 </Text>
               </TouchableOpacity>
+
+              {entityRole === "PATIENT" ? (
+                <TouchableOpacity
+                  onPress={handleCall}
+                  style={{
+                    height: 44,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: `${theme.primary}40`,
+                    backgroundColor: `${theme.primary}12`,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexDirection: "row",
+                  }}
+                >
+                  <Video color={theme.primary} size={16} />
+                  <Text style={{ marginLeft: 8, color: theme.primary, fontSize: 13, fontFamily: "Inter_600SemiBold" }}>
+                    Start Call
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
 
               <TouchableOpacity
                 onPress={openExternalMap}

@@ -21,6 +21,7 @@ import LocationPickerField from "@/components/LocationPickerField";
 import { useAppTheme } from "@/components/ThemeProvider";
 import { useHospitalProfile } from "@/utils/useHospitalProfile";
 import { uploadFileIfNeeded } from "@/utils/upload";
+import { validatePickedFiles } from "@/utils/fileValidation";
 
 export default function HospitalEditProfileScreen() {
   const router = useRouter();
@@ -141,7 +142,16 @@ export default function HospitalEditProfileScreen() {
           });
 
       if (!result.canceled && result.assets?.length) {
-        setter(result.assets[0].uri);
+        const asset = result.assets[0];
+        const { accepted, rejected, message } = validatePickedFiles([asset], {
+          allowImages: true,
+          maxBytes: 4 * 1024 * 1024,
+        });
+        if (rejected.length) {
+          Alert.alert("Photo rejected", message);
+        }
+        if (!accepted.length) return;
+        setter(accepted[0].uri);
       }
     } catch (error) {
       Alert.alert("Image Error", "Unable to pick image.");

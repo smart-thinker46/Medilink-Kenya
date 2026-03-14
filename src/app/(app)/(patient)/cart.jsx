@@ -10,7 +10,6 @@ import { useAppTheme } from "@/components/ThemeProvider";
 import { useCartStore } from "@/utils/cart/store";
 import apiClient from "@/utils/api";
 import { useToast } from "@/components/ToastProvider";
-import { exportReceipt } from "@/utils/receiptExport";
 import { resolveMediaUrl } from "@/utils/media";
 
 export default function PatientCartScreen() {
@@ -107,6 +106,7 @@ export default function PatientCartScreen() {
         orderId: order?.id,
         recipientId: pharmacyId,
         recipientRole: "PHARMACY_ADMIN",
+        recipientName: items?.[0]?.pharmacy || undefined,
         phone,
         description: "Pharmacy order payment",
       });
@@ -120,13 +120,6 @@ export default function PatientCartScreen() {
           : "Payment initiated. Complete payment in IntaSend checkout.",
         "success",
       );
-      if (payment) {
-        try {
-          await exportReceipt({ payment, payer: { phone } });
-        } catch {
-          // ignore receipt failures
-        }
-      }
       await clear();
       router.back();
     },

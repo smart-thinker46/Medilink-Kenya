@@ -9,7 +9,6 @@ import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
 import apiClient from "@/utils/api";
 import { useToast } from "@/components/ToastProvider";
-import { exportReceipt } from "@/utils/receiptExport";
 import { useAuthStore } from "@/utils/auth/store";
 
 const ROLE_LABELS = {
@@ -30,12 +29,21 @@ export default function PaymentCheckoutScreen() {
 
   const title = params?.title || "Checkout";
   const roleParam = typeof params?.roles === "string" ? params.roles : "MEDIC";
+  const methodParam = typeof params?.methods === "string" ? params.methods : "";
+  const hiredOnly = String(params?.hiredOnly || "").toLowerCase() === "true";
   const roles = roleParam.split(",").map((r) => r.trim()).filter(Boolean);
   const [selectedRole, setSelectedRole] = useState(roles[0]);
   const [recipientId, setRecipientId] = useState("");
+  const [medicSearch, setMedicSearch] = useState("");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("KES");
-  const selectedMethod = "intasend";
+  const methodOptions = useMemo(() => {
+    const raw = methodParam
+      ? methodParam.split(",").map((item) => item.trim().toLowerCase()).filter(Boolean)
+      : ["intasend"];
+    return raw.length ? raw : ["intasend"];
+  }, [methodParam]);
+  const [selectedMethod, setSelectedMethod] = useState(methodOptions[0]);
 
   const ratesQuery = useQuery({
     queryKey: ["payment-rates"],
@@ -44,11 +52,29 @@ export default function PaymentCheckoutScreen() {
   const usdKesRate = Number(ratesQuery.data?.USD_KES || 150);
 
   const medicsQuery = useQuery({
-    queryKey: ["payment-medics"],
-    queryFn: () => apiClient.getMedics(),
+    queryKey: ["payment-medics", hiredOnly ? "hired" : "all"],
+    queryFn: () => (hiredOnly ? apiClient.getHiredMedics() : apiClient.getMedics()),
     enabled: selectedRole === "MEDIC",
   });
   const medics = medicsQuery.data?.items || medicsQuery.data || [];
+
+  const filteredMedics = useMemo(() => {
+    const query = medicSearch.trim().toLowerCase();
+    if (!query) return medics;
+    return medics.filter((medic) => {
+      const haystack = [
+        medic.name,
+        medic.fullName,
+        medic.specialization,
+        medic.phone,
+        medic.email,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [medics, medicSearch]);
 
   const selectedRecipient = useMemo(() => {
     return medics.find((medic) => medic.id === recipientId);
@@ -65,23 +91,20 @@ export default function PaymentCheckoutScreen() {
         method: selectedMethod,
         recipientId,
         recipientRole: selectedRole,
+        recipientName:
+          selectedRecipient?.name ||
+          selectedRecipient?.fullName ||
+          selectedRecipient?.hospitalName ||
+          selectedRecipient?.pharmacyName ||
+          undefined,
+        recipientEmail: selectedRecipient?.email || undefined,
+        recipientPhone: selectedRecipient?.phone || undefined,
         type: "TRANSFER",
         phone: auth?.user?.phone,
       });
     },
     onSuccess: async (payment) => {
       showToast("Payment initiated.", "success");
-      if (payment) {
-        try {
-          await exportReceipt({
-            payment,
-            payer: { email: payment.payerEmail },
-            recipient: { role: payment.recipientRole, name: selectedRecipient?.name },
-          });
-        } catch {
-          // ignore receipt failures
-        }
-      }
       router.back();
     },
     onError: (error) => {
@@ -149,30 +172,125 @@ export default function PaymentCheckoutScreen() {
           ))}
         </View>
 
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+          {methodOptions.map((method) => {
+            const label =
+              method === "mobile"
+                ? "Mobile Money"
+                : method === "bank"
+                  ? "Bank Transfer"
+                  : method === "cash"
+                    ? "Cash"
+                    : "IntaSend";
+            const active = selectedMethod === method;
+            return (
+              <TouchableOpacity
+                key={method}
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: 16,
+                  backgroundColor: active ? `${theme.primary}20` : theme.surface,
+                  borderWidth: 1,
+                  borderColor: active ? theme.primary : theme.border,
+                }}
+                onPress={() => setSelectedMethod(method)}
+              >
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontFamily: "Inter_600SemiBold",
+                    color: active ? theme.primary : theme.textSecondary,
+                  }}
+                >
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
         {selectedRole === "MEDIC" ? (
           <View style={{ marginBottom: 16 }}>
-            {(medics || []).map((medic) => (
-              <TouchableOpacity
-                key={medic.id}
+            <View
+              style={{
+                backgroundColor: theme.surface,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: theme.border,
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                marginBottom: 10,
+              }}
+            >
+              <TextInput
+                value={medicSearch}
+                onChangeText={setMedicSearch}
+                placeholder="Search hired medics"
+                placeholderTextColor={theme.textSecondary}
+                style={{
+                  color: theme.text,
+                  fontFamily: "Inter_400Regular",
+                }}
+              />
+            </View>
+            {medics.length === 0 ? (
+              <View
                 style={{
                   backgroundColor: theme.card,
                   borderRadius: 14,
                   padding: 14,
-                  marginBottom: 10,
-                  borderWidth: recipientId === medic.id ? 2 : 1,
-                  borderColor:
-                    recipientId === medic.id ? theme.primary : theme.border,
+                  borderWidth: 1,
+                  borderColor: theme.border,
                 }}
-                onPress={() => setRecipientId(medic.id)}
               >
-                <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: theme.text }}>
-                  {medic.name || medic.fullName || "Medic"}
+                <Text style={{ fontSize: 13, color: theme.textSecondary }}>
+                  No hired medics found yet.
                 </Text>
-                <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 4 }}>
-                  {medic.specialization || "General Practice"}
+              </View>
+            ) : filteredMedics.length === 0 ? (
+              <View
+                style={{
+                  backgroundColor: theme.card,
+                  borderRadius: 14,
+                  padding: 14,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                }}
+              >
+                <Text style={{ fontSize: 13, color: theme.textSecondary }}>
+                  No hired medics match that search.
                 </Text>
-              </TouchableOpacity>
-            ))}
+              </View>
+            ) : (
+              (filteredMedics || []).map((medic) => (
+                <TouchableOpacity
+                  key={medic.id}
+                  style={{
+                    backgroundColor: theme.card,
+                    borderRadius: 14,
+                    padding: 14,
+                    marginBottom: 10,
+                    borderWidth: recipientId === medic.id ? 2 : 1,
+                    borderColor:
+                      recipientId === medic.id ? theme.primary : theme.border,
+                  }}
+                  onPress={() => setRecipientId(medic.id)}
+                >
+                  <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: theme.text }}>
+                    {medic.name || medic.fullName || "Medic"}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 4 }}>
+                    {medic.specialization || "General Practice"}
+                  </Text>
+                  {medic.phone ? (
+                    <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                      Phone: {medic.phone}
+                    </Text>
+                  ) : null}
+                </TouchableOpacity>
+              ))
+            )}
           </View>
         ) : (
           <View style={{ marginBottom: 16 }}>
@@ -253,15 +371,21 @@ export default function PaymentCheckoutScreen() {
           )}
         </View>
 
-        {currency === "USD" && (
+        {currency === "USD" && selectedMethod === "intasend" && (
           <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 10 }}>
             IntaSend checkout will use 1 USD ≈ {usdKesRate} KES.
           </Text>
         )}
 
-        <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 10 }}>
-          Payments are processed via IntaSend.
-        </Text>
+        {selectedMethod === "intasend" ? (
+          <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 10 }}>
+            Payments are processed via IntaSend.
+          </Text>
+        ) : (
+          <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 10 }}>
+            This payment will be recorded as paid via {selectedMethod}.
+          </Text>
+        )}
 
         <TouchableOpacity
           style={{

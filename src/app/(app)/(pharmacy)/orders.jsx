@@ -1,7 +1,7 @@
-import React, { useMemo, useRef } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, FlatList, Image } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { MotiView } from "moti";
 import { ArrowLeft, Check, X, MapPin, Package, Pill, Heart } from "lucide-react-native";
@@ -22,6 +22,7 @@ import PharmacyScopeSelector from "@/components/PharmacyScopeSelector";
 
 export default function PharmacyOrdersScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const { theme, isDark, refreshInterval, batterySaver } = useAppTheme();
   const { showToast } = useToast();
@@ -40,6 +41,7 @@ export default function PharmacyOrdersScreen() {
     [profile],
   );
   const isProfileComplete = completion.percent >= 99;
+  const [expandedOrderIds, setExpandedOrderIds] = useState(() => new Set());
 
   const ordersQuery = useQuery({
     queryKey: ["pharmacy-orders"],
@@ -80,6 +82,12 @@ export default function PharmacyOrdersScreen() {
     }
     return nextDistance ?? distanceCacheRef.current.get(targetId) ?? null;
   };
+  const orderIdParam = Array.isArray(params?.orderId) ? params.orderId[0] : params?.orderId;
+  const focusedOrderId =
+    typeof orderIdParam === "string" && orderIdParam.trim().length > 0
+      ? orderIdParam.trim()
+      : "";
+
   const orders = myLocation
     ? [...scopedOrdersRaw].sort((a, b) => {
         const aLoc = linkedMap[a.patientId || a.patient_id];
@@ -92,6 +100,13 @@ export default function PharmacyOrdersScreen() {
         return aDist - bDist;
       })
     : scopedOrdersRaw;
+
+  const orderedList = useMemo(() => {
+    if (!focusedOrderId) return orders;
+    const idx = orders.findIndex((item) => String(item?.id || "") === focusedOrderId);
+    if (idx <= 0) return orders;
+    return [orders[idx], ...orders.filter((_, i) => i !== idx)];
+  }, [orders, focusedOrderId]);
 
   const handleAction = (actionName) => {
     if (!isProfileComplete) {
@@ -166,7 +181,7 @@ export default function PharmacyOrdersScreen() {
         )}
 
         <FlatList
-          data={orders}
+          data={orderedList}
           keyExtractor={(item, index) => item.id || `order-${index}`}
           contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24 }}
           renderItem={({ item, index }) => (
@@ -176,13 +191,26 @@ export default function PharmacyOrdersScreen() {
               transition={{ type: "timing", duration: 500, delay: index * 80 }}
               style={{ marginBottom: 16 }}
             >
+              {(() => {
+                const patientName =
+                  item.patientName ||
+                  item.patientFullName ||
+                  item.patient?.fullName ||
+                  item.patient?.name ||
+                  "";
+                const orderId = String(item?.id || `order-${index}`);
+                const isExpanded = expandedOrderIds.has(orderId);
+                return (
               <View
                 style={{
                   backgroundColor: theme.card,
                   borderRadius: 16,
                   padding: 16,
                   borderWidth: 1,
-                  borderColor: theme.border,
+                  borderColor:
+                    focusedOrderId && String(item?.id || "") === focusedOrderId
+                      ? theme.primary
+                      : theme.border,
                 }}
               >
                 <View
@@ -193,16 +221,39 @@ export default function PharmacyOrdersScreen() {
                     marginBottom: 6,
                   }}
                 >
-                  <Text
-                    style={{
-                      fontSize: 16,
-                      fontFamily: "Inter_600SemiBold",
-                      color: theme.text,
-                      flex: 1,
-                    }}
+                  <TouchableOpacity
+                    style={{ flex: 1, paddingRight: 10 }}
+                    onPress={() =>
+                      setExpandedOrderIds((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(orderId)) {
+                          next.delete(orderId);
+                        } else {
+                          next.add(orderId);
+                        }
+                        return next;
+                      })
+                    }
                   >
-                    Order #{item.id || "--"}
-                  </Text>
+                    <Text
+                      style={{
+                        fontSize: 16,
+                        fontFamily: "Inter_600SemiBold",
+                        color: theme.text,
+                      }}
+                    >
+                      Order #{item.id || "--"}
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        color: theme.textSecondary,
+                        marginTop: 2,
+                      }}
+                    >
+                      {isExpanded ? "Tap to collapse" : "Tap to view details"}
+                    </Text>
+                  </TouchableOpacity>
                   {(() => {
                     const targetId = item.patientId || item.patient_id;
                     const distanceKm = getCachedDistance(
@@ -235,6 +286,18 @@ export default function PharmacyOrdersScreen() {
                     );
                   })()}
                 </View>
+                {patientName ? (
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontFamily: "Inter_500Medium",
+                      color: theme.textSecondary,
+                      marginBottom: 6,
+                    }}
+                  >
+                    Patient: {patientName}
+                  </Text>
+                ) : null}
                 <Text
                   style={{
                     fontSize: 13,
@@ -245,7 +308,7 @@ export default function PharmacyOrdersScreen() {
                 >
                   {item.items?.length || 0} items • KES {item.total || "--"}
                 </Text>
-                {item.requiresPrescription || item.prescriptionId || item.prescription?.id ? (
+                {isExpanded && (item.requiresPrescription || item.prescriptionId || item.prescription?.id) ? (
                   <View
                     style={{
                       marginBottom: 10,
@@ -280,7 +343,7 @@ export default function PharmacyOrdersScreen() {
                     ) : null}
                   </View>
                 ) : null}
-                {Array.isArray(item.items) && item.items.length > 0 ? (
+                {isExpanded && Array.isArray(item.items) && item.items.length > 0 ? (
                   <View style={{ marginBottom: 10, gap: 8 }}>
                     {item.items.slice(0, 3).map((product, idx) => (
                       <View
@@ -318,7 +381,9 @@ export default function PharmacyOrdersScreen() {
                   </View>
                 ) : null}
 
-                <View style={{ flexDirection: "row", gap: 12 }}>
+                {isExpanded && (
+                  <View style={{ gap: 12 }}>
+                    <View style={{ flexDirection: "row", gap: 12 }}>
                   <TouchableOpacity
                     style={{
                       flex: 1,
@@ -404,7 +469,7 @@ export default function PharmacyOrdersScreen() {
                         marginLeft: 6,
                       }}
                     >
-                      Health Hub
+                      Health Record
                     </Text>
                   </TouchableOpacity>
 
@@ -432,17 +497,20 @@ export default function PharmacyOrdersScreen() {
                       Decline
                     </Text>
                   </TouchableOpacity>
-                </View>
-
-                {item.patientId || item.patient_id ? (
-                  <LocationPreview
-                    targetId={item.patientId || item.patient_id}
-                    theme={theme}
-                    isDark={isDark}
-                    height={80}
-                  />
-                ) : null}
+                    </View>
+                    {item.patientId || item.patient_id ? (
+                      <LocationPreview
+                        targetId={item.patientId || item.patient_id}
+                        theme={theme}
+                        isDark={isDark}
+                        height={80}
+                      />
+                    ) : null}
+                  </View>
+                )}
               </View>
+                );
+              })()}
             </MotiView>
           )}
           ListEmptyComponent={() => (

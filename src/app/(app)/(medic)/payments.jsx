@@ -12,7 +12,9 @@ import { useQuery } from "@tanstack/react-query";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
+import { useToast } from "@/components/ToastProvider";
 import apiClient from "@/utils/api";
+import { previewReceipt } from "@/utils/receiptExport";
 
 const DEFAULT_PRICING = { monthly: 300, yearly: 4800 };
 
@@ -24,14 +26,55 @@ export default function MedicPaymentsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useAppTheme();
+  const { showToast } = useToast();
   const pricingQuery = useQuery({
     queryKey: ["subscription-pricing"],
     queryFn: () => apiClient.getSubscriptionPricing(),
+  });
+  const paymentsQuery = useQuery({
+    queryKey: ["medic-payments-history"],
+    queryFn: () => apiClient.getPaymentHistory(),
   });
   const pricing = useMemo(() => {
     const map = pricingQuery.data || {};
     return map?.MEDIC || DEFAULT_PRICING;
   }, [pricingQuery.data]);
+  const payments = useMemo(() => {
+    const list = paymentsQuery.data?.items || paymentsQuery.data || [];
+    return Array.isArray(list) ? list : [];
+  }, [paymentsQuery.data]);
+  const recentPayments = useMemo(
+    () =>
+      [...payments].sort(
+        (a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0),
+      ),
+    [payments],
+  );
+
+  const handleDownloadReceipt = async (payment) => {
+    try {
+      const status = String(payment?.status || "").toUpperCase();
+      if (status !== "PAID") {
+        showToast("Receipt is available after payment is completed.", "warning");
+        return;
+      }
+      await previewReceipt({
+        payment,
+        payer: {
+          name: payment?.payerName,
+          email: payment?.payerEmail,
+          phone: payment?.payerPhone,
+        },
+        recipient: {
+          name: payment?.recipientName,
+          role: payment?.recipientRole,
+        },
+      });
+      showToast("Receipt downloaded.", "success");
+    } catch (error) {
+      showToast(error?.message || "Failed to download receipt.", "error");
+    }
+  };
 
   return (
     <ScreenLayout>
@@ -151,16 +194,46 @@ export default function MedicPaymentsScreen() {
             >
               Incoming Payments
             </Text>
-            <Text
-              style={{
-                fontSize: 13,
-                fontFamily: "Inter_400Regular",
-                color: theme.textSecondary,
-              }}
-            >
-              Payments from hospitals and patients will show here once payment
-              services are connected.
-            </Text>
+            {paymentsQuery.isLoading ? (
+              <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                Loading payments...
+              </Text>
+            ) : recentPayments.length === 0 ? (
+              <Text style={{ fontSize: 13, color: theme.textSecondary }}>
+                No payments recorded yet.
+              </Text>
+            ) : (
+              recentPayments.slice(0, 6).map((payment) => (
+                <View
+                  key={payment.id}
+                  style={{
+                    paddingVertical: 8,
+                    borderBottomWidth: 1,
+                    borderBottomColor: theme.border,
+                  }}
+                >
+                  <Text style={{ fontSize: 13, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                    {payment.description || payment.type || "Payment"} • {payment.currency || "KES"}{" "}
+                    {payment.amount || 0}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 2 }}>
+                    {payment.payerName || payment.payerEmail || "Unknown payer"} →{" "}
+                    {payment.recipientName || payment.recipientRole || "Recipient"}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: theme.textTertiary, marginTop: 2 }}>
+                    {new Date(payment.createdAt || Date.now()).toLocaleString()}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => handleDownloadReceipt(payment)}
+                    style={{ marginTop: 6, alignSelf: "flex-start" }}
+                  >
+                    <Text style={{ color: theme.primary, fontSize: 12, fontFamily: "Inter_600SemiBold" }}>
+                      Preview Receipt
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ))
+            )}
           </View>
 
           <Text

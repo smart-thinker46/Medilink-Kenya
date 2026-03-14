@@ -8,6 +8,7 @@ import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
 import { useToast } from "@/components/ToastProvider";
 import apiClient from "@/utils/api";
+import { previewReceipt } from "@/utils/receiptExport";
 
 const statusOptions = ["ACTIVE", "PAUSED", "CANCELED"];
 const defaultPlanMatrix = [
@@ -93,6 +94,36 @@ export default function AdminSubscriptionsScreen() {
       showToast("Subscription pricing updated.", "success");
     } catch (error) {
       showToast(error.message || "Failed to update pricing.", "error");
+    }
+  };
+
+  const handleDownloadReceipt = async (sub) => {
+    try {
+      const ref =
+        sub?.paymentId ||
+        sub?.payment_id ||
+        sub?.paymentRef ||
+        sub?.apiRef ||
+        null;
+      if (!ref) {
+        throw new Error("Payment reference missing for this subscription.");
+      }
+      const payment = await apiClient.getPaymentDetails({ apiRef: ref });
+      await previewReceipt({
+        payment,
+        payer: {
+          name: payment?.payerName,
+          email: payment?.payerEmail,
+          phone: payment?.payerPhone,
+        },
+        recipient: {
+          name: payment?.recipientName,
+          role: payment?.recipientRole,
+        },
+      });
+      showToast("Receipt downloaded.", "success");
+    } catch (error) {
+      showToast(error?.message || "Failed to download receipt.", "error");
     }
   };
 
@@ -258,6 +289,14 @@ export default function AdminSubscriptionsScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
+              <TouchableOpacity
+                onPress={() => handleDownloadReceipt(sub)}
+                style={{ marginTop: 10, alignSelf: "flex-start" }}
+              >
+                <Text style={{ color: theme.primary, fontSize: 12, fontFamily: "Inter_600SemiBold" }}>
+                  Preview Receipt
+                </Text>
+              </TouchableOpacity>
             </MotiView>
           ))
         )}

@@ -11,7 +11,6 @@ import { useAuthStore } from "@/utils/auth/store";
 import apiClient from "@/utils/api";
 import { useToast } from "@/components/ToastProvider";
 import { normalizeRole } from "@/utils/communicationRules";
-import { exportReceipt } from "@/utils/receiptExport";
 
 const DEFAULT_PRICING = {
   MEDIC: { monthly: 300, yearly: 4800 },
@@ -69,6 +68,8 @@ export default function SubscriptionCheckoutScreen() {
         description: subscriptionDescription,
         plan,
         phone: auth?.user?.phone,
+        recipientName: "MediLink Kenya",
+        recipientRole: "PLATFORM",
       });
       if (payment?.status === "PAID") {
         await apiClient.createSubscription({
@@ -87,17 +88,6 @@ export default function SubscriptionCheckoutScreen() {
           : "Subscription payment initiated.",
         "success",
       );
-      if (payment) {
-        try {
-          await exportReceipt({
-            payment,
-            payer: { email: payment.payerEmail },
-            recipient: { role: role, name: role?.replace("_", " ") },
-          });
-        } catch {
-          // ignore receipt failures
-        }
-      }
       router.back();
     },
     onError: (error) => {

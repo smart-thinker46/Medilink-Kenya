@@ -2,6 +2,7 @@ import axios from "axios";
 import { Platform, Linking } from "react-native";
 import Constants from "expo-constants";
 import { useAuthStore } from "../utils/auth/store";
+import { exportReceipt } from "./receiptExport";
 
 const normalizeBaseUrl = (value) => {
   const raw = String(value || "").trim();
@@ -405,6 +406,10 @@ class ApiClient {
     return this.client.get("/medics", { params });
   }
 
+  async getHiredMedics(params = {}) {
+    return this.client.get("/medics/hired", { params });
+  }
+
   async getMedicById(id) {
     return this.client.get(`/medics/${id}`);
   }
@@ -504,6 +509,22 @@ class ApiClient {
 
   async applyToJob(jobId) {
     return this.client.post(`/jobs/${jobId}/apply`);
+  }
+
+  async approveShiftApplication(shiftId, medicId) {
+    return this.client.put(`/shifts/${shiftId}/applications/${medicId}/approve`);
+  }
+
+  async rejectShiftApplication(shiftId, medicId) {
+    return this.client.put(`/shifts/${shiftId}/applications/${medicId}/reject`);
+  }
+
+  async approveJobApplication(jobId, medicId) {
+    return this.client.put(`/jobs/${jobId}/applications/${medicId}/approve`);
+  }
+
+  async rejectJobApplication(jobId, medicId) {
+    return this.client.put(`/jobs/${jobId}/applications/${medicId}/reject`);
   }
 
   async cancelShiftApplication(shiftId) {
@@ -659,9 +680,56 @@ class ApiClient {
   async createPayment(data) {
     const payload = {
       ...(data || {}),
-      method: "intasend",
+      method: data?.method || "intasend",
     };
     const payment = await this.client.post("/payments", payload);
+    const paymentStatus = String(payment?.status || "").toUpperCase();
+    const shouldExport =
+      payload.autoReceipt !== false &&
+      payload.skipReceipt !== true &&
+      paymentStatus === "PAID";
+    if (shouldExport && payment) {
+      try {
+        const auth = useAuthStore.getState().auth;
+        const payer = {
+          ...(auth?.user || {}),
+          ...(payload.payer || {}),
+        };
+        let recipient = {
+          ...(payload.recipient || {}),
+        };
+        if (!recipient.name && payload.recipientName) recipient.name = payload.recipientName;
+        if (!recipient.email && payload.recipientEmail) recipient.email = payload.recipientEmail;
+        if (!recipient.phone && payload.recipientPhone) recipient.phone = payload.recipientPhone;
+        if (!recipient.role && payload.recipientRole) recipient.role = payload.recipientRole;
+
+        if (!recipient.name && payload.recipientId) {
+          try {
+            const user = await this.getUserById(payload.recipientId);
+            if (user) {
+              recipient = {
+                ...recipient,
+                name: user?.fullName || user?.name || recipient.name,
+                email: user?.email || recipient.email,
+                phone: user?.phone || recipient.phone,
+              };
+            }
+          } catch {
+            // ignore recipient lookup failures
+          }
+        }
+
+        await exportReceipt({
+          payment,
+          payer,
+          recipient,
+          business: payload.business,
+          logo: payload.logo,
+        });
+      } catch {
+        // ignore receipt failures
+      }
+    }
     const checkoutUrl =
       payment?.checkoutUrl ||
       payment?.gatewayResponse?.url ||

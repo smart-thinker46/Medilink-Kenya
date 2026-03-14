@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MotiView } from "moti";
-import { ArrowLeft, MapPin, Phone, Search, Check, X, MessageCircle } from "lucide-react-native";
+import { ArrowLeft, MapPin, Phone, Search, Check, X, MessageCircle, ChevronDown, ChevronUp, User, HeartPulse } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -33,6 +33,7 @@ export default function MedicPatientsScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [bookingSearchQuery, setBookingSearchQuery] = useState("");
   const [quickFilters, setQuickFilters] = useState([]);
+  const [expandedPatients, setExpandedPatients] = useState(new Set());
 
   const patientsQuery = useQuery({
     queryKey: ["medic-patients", medicUserId],
@@ -230,6 +231,18 @@ export default function MedicPatientsScreen() {
       return matchesSearch && matchesQuickFilter;
     });
   }, [patients, normalizedSearch, quickFilters, linkedMap, myLocation, isUserOnline]);
+
+  const toggleExpanded = (key) => {
+    setExpandedPatients((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
 
   const handleRequestAccess = (item) => {
     const appointmentId = item?.appointmentId;
@@ -475,14 +488,17 @@ export default function MedicPatientsScreen() {
           data={filteredPatients}
           keyExtractor={(item, index) => item.id || `patient-${index}`}
           contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24 }}
-          renderItem={({ item, index }) => (
+          renderItem={({ item, index }) => {
+            const patientKey = String(item.patientId || item.id || `row-${index}`);
+            const isExpanded = expandedPatients.has(patientKey);
+            return (
             <MotiView
               from={{ opacity: 0, translateY: 10 }}
               animate={{ opacity: 1, translateY: 0 }}
               transition={{ type: "timing", duration: 500, delay: index * 80 }}
               style={{ marginBottom: 16 }}
             >
-              <TouchableOpacity
+              <View
                 style={{
                   backgroundColor: theme.card,
                   borderRadius: 16,
@@ -490,16 +506,14 @@ export default function MedicPatientsScreen() {
                   borderWidth: 1,
                   borderColor: theme.border,
                 }}
-                onPress={() =>
-                  router.push(`/(app)/(medic)/patient-details?patientId=${item.id || ""}`)
-                }
               >
-                <View
+                <TouchableOpacity
+                  onPress={() => toggleExpanded(patientKey)}
                   style={{
                     flexDirection: "row",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    marginBottom: 6,
+                    marginBottom: isExpanded ? 6 : 0,
                   }}
                 >
                   <View style={{ flex: 1, flexDirection: "row", alignItems: "center" }}>
@@ -522,174 +536,264 @@ export default function MedicPatientsScreen() {
                       }}
                     />
                   </View>
-                  {(() => {
-                    const targetId = item.patientId || item.id;
-                    const distanceKm = getCachedDistance(
-                      targetId,
-                      linkedMap[targetId],
-                    );
-                    if (distanceKm == null) return null;
-                    return (
-                      <View
-                        style={{
-                          marginLeft: 10,
-                          paddingHorizontal: 10,
-                          paddingVertical: 4,
-                          borderRadius: 999,
-                          backgroundColor: `${theme.primary}15`,
-                          borderWidth: 1,
-                          borderColor: `${theme.primary}35`,
-                        }}
-                      >
-                        <Text
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    {(() => {
+                      const targetId = item.patientId || item.id;
+                      const distanceKm = getCachedDistance(
+                        targetId,
+                        linkedMap[targetId],
+                      );
+                      if (distanceKm == null) return null;
+                      return (
+                        <View
                           style={{
-                            fontSize: 11,
-                            fontFamily: "Inter_600SemiBold",
-                            color: theme.primary,
+                            marginLeft: 10,
+                            paddingHorizontal: 10,
+                            paddingVertical: 4,
+                            borderRadius: 999,
+                            backgroundColor: `${theme.primary}15`,
+                            borderWidth: 1,
+                            borderColor: `${theme.primary}35`,
                           }}
                         >
-                          {distanceKm.toFixed(1)} km
-                        </Text>
-                      </View>
-                    );
-                  })()}
-                </View>
+                          <Text
+                            style={{
+                              fontSize: 11,
+                              fontFamily: "Inter_600SemiBold",
+                              color: theme.primary,
+                            }}
+                          >
+                            {distanceKm.toFixed(1)} km
+                          </Text>
+                        </View>
+                      );
+                    })()}
+                    <View style={{ marginLeft: 8 }}>
+                      {isExpanded ? (
+                        <ChevronUp size={18} color={theme.textSecondary} />
+                      ) : (
+                        <ChevronDown size={18} color={theme.textSecondary} />
+                      )}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+                {!isExpanded ? (
+                  <TouchableOpacity
+                    onPress={() => toggleExpanded(patientKey)}
+                    style={{ marginTop: 10, alignSelf: "flex-start" }}
+                  >
+                    <Text style={{ color: theme.primary, fontSize: 12, fontFamily: "Inter_600SemiBold" }}>
+                      Show more
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
 
-                {item.source === "appointment" &&
-                (item.bookingStatus === "pending" || item.bookingStatus === "rescheduled") ? (
-                  <View style={{ marginTop: 12 }}>
-                    <TouchableOpacity
+                {isExpanded ? (
+                  <>
+                    {item.source === "appointment" &&
+                    (item.bookingStatus === "pending" || item.bookingStatus === "rescheduled") ? (
+                      <View style={{ marginTop: 12 }}>
+                        <TouchableOpacity
+                          style={{
+                            backgroundColor: `${theme.primary}18`,
+                            borderRadius: 10,
+                            paddingVertical: 8,
+                            alignItems: "center",
+                          }}
+                          onPress={() => handleRequestAccess(item)}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              fontFamily: "Inter_600SemiBold",
+                              color: theme.primary,
+                            }}
+                          >
+                            Request Access
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
+                    <Text
                       style={{
-                        backgroundColor: `${theme.primary}18`,
-                        borderRadius: 10,
-                        paddingVertical: 8,
-                        alignItems: "center",
+                        fontSize: 13,
+                        fontFamily: "Inter_400Regular",
+                        color: theme.textSecondary,
+                        marginBottom: 10,
+                        marginTop: 10,
                       }}
-                      onPress={() => handleRequestAccess(item)}
                     >
+                      Condition: {item.condition || "Monitoring"}
+                    </Text>
+
+                    <View style={{ flexDirection: "row", alignItems: "center" }}>
+                      <MapPin color={theme.textSecondary} size={14} />
                       <Text
                         style={{
                           fontSize: 12,
-                          fontFamily: "Inter_600SemiBold",
-                          color: theme.primary,
+                          fontFamily: "Inter_500Medium",
+                          color: theme.textSecondary,
+                          marginLeft: 6,
                         }}
                       >
-                        Request Access
+                        {item.location?.address || "Location not set"}
                       </Text>
-                    </TouchableOpacity>
-                  </View>
+                      <Phone color={theme.textSecondary} size={14} style={{ marginLeft: 12 }} />
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontFamily: "Inter_500Medium",
+                          color: theme.textSecondary,
+                          marginLeft: 6,
+                        }}
+                      >
+                        {item.emergencyContactPhone || "--"}
+                      </Text>
+                    </View>
+
+                    <View style={{ flexDirection: "row", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+                      <TouchableOpacity
+                        style={{
+                          flex: 1,
+                          minWidth: 150,
+                          backgroundColor: theme.surface,
+                          borderRadius: 12,
+                          paddingVertical: 10,
+                          alignItems: "center",
+                          flexDirection: "row",
+                          justifyContent: "center",
+                          borderWidth: 1,
+                          borderColor: theme.border,
+                        }}
+                        onPress={() => {
+                          const targetId = item.patientId || item.id;
+                          if (!targetId) return;
+                          router.push(`/(app)/(medic)/chat?patientId=${targetId}`);
+                        }}
+                      >
+                        <MessageCircle color={theme.textSecondary} size={16} />
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontFamily: "Inter_500Medium",
+                            color: theme.textSecondary,
+                            marginLeft: 6,
+                          }}
+                        >
+                          Message
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={{
+                          flex: 1,
+                          minWidth: 150,
+                          backgroundColor: theme.surface,
+                          borderRadius: 12,
+                          paddingVertical: 10,
+                          alignItems: "center",
+                          flexDirection: "row",
+                          justifyContent: "center",
+                          borderWidth: 1,
+                          borderColor: theme.border,
+                        }}
+                        onPress={() =>
+                          router.push({
+                            pathname: "/(app)/(shared)/location",
+                            params: { targetId: item.patientId || item.id, title: "Patient Location" },
+                          })
+                        }
+                      >
+                        <MapPin color={theme.textSecondary} size={16} />
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontFamily: "Inter_500Medium",
+                            color: theme.textSecondary,
+                            marginLeft: 6,
+                          }}
+                        >
+                          View Location
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={{
+                          flex: 1,
+                          minWidth: 150,
+                          backgroundColor: theme.surface,
+                          borderRadius: 12,
+                          paddingVertical: 10,
+                          alignItems: "center",
+                          flexDirection: "row",
+                          justifyContent: "center",
+                          borderWidth: 1,
+                          borderColor: theme.border,
+                        }}
+                        onPress={() => {
+                          const targetId = item.patientId || item.id;
+                          if (!targetId) return;
+                          router.push(`/(app)/(medic)/patient-details?patientId=${targetId}`);
+                        }}
+                        >
+                          <User color={theme.textSecondary} size={16} />
+                          <Text
+                            style={{
+                            fontSize: 13,
+                            fontFamily: "Inter_500Medium",
+                            color: theme.textSecondary,
+                            marginLeft: 6,
+                          }}
+                        >
+                          Open Profile
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={{
+                          flex: 1,
+                          minWidth: 150,
+                          backgroundColor: theme.surface,
+                          borderRadius: 12,
+                          paddingVertical: 10,
+                          alignItems: "center",
+                          flexDirection: "row",
+                          justifyContent: "center",
+                          borderWidth: 1,
+                          borderColor: theme.border,
+                        }}
+                        onPress={() =>
+                          router.push({
+                            pathname: "/(app)/(shared)/patient-health-hub",
+                            params: { patientId: item.patientId || item.id },
+                          })
+                        }
+                      >
+                        <HeartPulse color={theme.textSecondary} size={16} />
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontFamily: "Inter_500Medium",
+                            color: theme.textSecondary,
+                            marginLeft: 6,
+                          }}
+                        >
+                          Open Health Hub
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {item.patientId || item.id ? (
+                      <LocationPreview
+                        targetId={item.patientId || item.id}
+                        theme={theme}
+                        isDark={isDark}
+                        height={80}
+                      />
+                    ) : null}
+                  </>
                 ) : null}
-                <Text
-                  style={{
-                    fontSize: 13,
-                    fontFamily: "Inter_400Regular",
-                    color: theme.textSecondary,
-                    marginBottom: 10,
-                  }}
-                >
-                  Condition: {item.condition || "Monitoring"}
-                </Text>
-
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <MapPin color={theme.textSecondary} size={14} />
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontFamily: "Inter_500Medium",
-                      color: theme.textSecondary,
-                      marginLeft: 6,
-                    }}
-                  >
-                    {item.location?.address || "Location not set"}
-                  </Text>
-                  <Phone color={theme.textSecondary} size={14} style={{ marginLeft: 12 }} />
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontFamily: "Inter_500Medium",
-                      color: theme.textSecondary,
-                      marginLeft: 6,
-                    }}
-                  >
-                    {item.emergencyContactPhone || "--"}
-                  </Text>
-                </View>
-
-                <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
-                  <TouchableOpacity
-                    style={{
-                      flex: 1,
-                      backgroundColor: theme.surface,
-                      borderRadius: 12,
-                      paddingVertical: 10,
-                      alignItems: "center",
-                      flexDirection: "row",
-                      justifyContent: "center",
-                      borderWidth: 1,
-                      borderColor: theme.border,
-                    }}
-                    onPress={() => {
-                      const targetId = item.patientId || item.id;
-                      if (!targetId) return;
-                      router.push(`/(app)/(medic)/chat?patientId=${targetId}`);
-                    }}
-                  >
-                    <MessageCircle color={theme.textSecondary} size={16} />
-                    <Text
-                      style={{
-                        fontSize: 13,
-                        fontFamily: "Inter_500Medium",
-                        color: theme.textSecondary,
-                        marginLeft: 6,
-                      }}
-                    >
-                      Message
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={{
-                      flex: 1,
-                      backgroundColor: theme.surface,
-                      borderRadius: 12,
-                      paddingVertical: 10,
-                      alignItems: "center",
-                      flexDirection: "row",
-                      justifyContent: "center",
-                      borderWidth: 1,
-                      borderColor: theme.border,
-                    }}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/(app)/(shared)/location",
-                        params: { targetId: item.patientId || item.id, title: "Patient Location" },
-                      })
-                    }
-                  >
-                    <MapPin color={theme.textSecondary} size={16} />
-                    <Text
-                      style={{
-                        fontSize: 13,
-                        fontFamily: "Inter_500Medium",
-                        color: theme.textSecondary,
-                        marginLeft: 6,
-                      }}
-                    >
-                      View Location
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {item.patientId || item.id ? (
-                  <LocationPreview
-                    targetId={item.patientId || item.id}
-                    theme={theme}
-                    isDark={isDark}
-                    height={80}
-                  />
-                ) : null}
-              </TouchableOpacity>
+              </View>
             </MotiView>
-          )}
+          );
+          }}
           ListEmptyComponent={() => (
             <View
               style={{

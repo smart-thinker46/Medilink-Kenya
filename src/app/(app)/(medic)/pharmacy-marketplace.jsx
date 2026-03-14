@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   FlatList,
   ActivityIndicator,
   Image,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -29,6 +30,9 @@ export default function MedicPharmacyMarketplaceScreen() {
   const queryClient = useQueryClient();
   const { auth } = useAuthStore();
 
+  const isWeb = Platform.OS === "web";
+  const [page, setPage] = useState(1);
+  const pageSize = 8;
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState([]);
   const paymentMethod = "intasend";
@@ -73,6 +77,38 @@ export default function MedicPharmacyMarketplaceScreen() {
         : products,
     [products, scopedPharmacyId],
   );
+
+  const totalPages = useMemo(
+    () => (isWeb ? Math.max(1, Math.ceil(visibleProducts.length / pageSize)) : 1),
+    [visibleProducts.length, isWeb],
+  );
+
+  useEffect(() => {
+    if (!isWeb) return;
+    if (page > totalPages) {
+      setPage(totalPages);
+    } else if (page < 1) {
+      setPage(1);
+    }
+  }, [page, totalPages, isWeb]);
+
+  useEffect(() => {
+    if (!isWeb || totalPages <= 1) return;
+    const handleKey = (event) => {
+      if (event.key === "ArrowLeft") {
+        setPage((prev) => Math.max(1, prev - 1));
+      }
+      if (event.key === "ArrowRight") {
+        setPage((prev) => Math.min(totalPages, prev + 1));
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [isWeb, totalPages]);
+
+  const pagedProducts = isWeb
+    ? visibleProducts.slice((page - 1) * pageSize, page * pageSize)
+    : visibleProducts;
 
   const trackMarketplaceEvent = (pharmacyId, type, payload = {}) => {
     if (!pharmacyId || !type) return;
@@ -287,28 +323,49 @@ export default function MedicPharmacyMarketplaceScreen() {
           </View>
         ) : (
           <FlatList
-            data={visibleProducts}
+            data={pagedProducts}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={{ paddingBottom: 180 }}
+            style={{ width: "100%" }}
+            contentContainerStyle={{
+              paddingBottom: 180,
+              ...(isWeb
+                ? {
+                    flexDirection: "row",
+                    flexWrap: "wrap",
+                    alignItems: "stretch",
+                    justifyContent: "flex-start",
+                    columnGap: 16,
+                    rowGap: 16,
+                    width: "100%",
+                  }
+                : null),
+            }}
             renderItem={({ item }) => {
               const cartItem = cart.find((entry) => entry.id === item.id);
               const qty = cartItem?.quantity || 0;
               return (
                 <View
                   style={{
+                    width: isWeb ? "25%" : "100%",
+                    padding: isWeb ? 12 : 0,
+                    flexBasis: isWeb ? "25%" : undefined,
+                    maxWidth: isWeb ? 300 : "100%",
+                    minWidth: isWeb ? 220 : undefined,
+                    flexGrow: isWeb ? 1 : 0,
                     backgroundColor: theme.card,
                     borderRadius: 14,
-                    padding: 14,
-                    marginBottom: 10,
+                    padding: isWeb ? 18 : 14,
+                    marginBottom: isWeb ? 0 : 10,
                     borderWidth: 1,
                     borderColor: theme.border,
+                    minHeight: isWeb ? 320 : undefined,
                   }}
                 >
                   {item.imageUrl ? (
                     <View
                       style={{
                         width: "100%",
-                        height: 110,
+                        height: isWeb ? 160 : 110,
                         borderRadius: 10,
                         overflow: "hidden",
                         marginBottom: 10,
@@ -400,6 +457,89 @@ export default function MedicPharmacyMarketplaceScreen() {
             )}
           />
         )}
+        {isWeb && totalPages > 1 ? (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingHorizontal: 12,
+              paddingBottom: 16,
+            }}
+          >
+            <TouchableOpacity
+              onPress={() => setPage((prev) => Math.max(1, prev - 1))}
+              disabled={page <= 1}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: page <= 1 ? theme.surface : theme.card,
+                opacity: page <= 1 ? 0.6 : 1,
+              }}
+            >
+              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>Previous</Text>
+            </TouchableOpacity>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              {(() => {
+                const maxButtons = 7;
+                const half = Math.floor(maxButtons / 2);
+                let start = Math.max(1, page - half);
+                let end = Math.min(totalPages, start + maxButtons - 1);
+                if (end - start + 1 < maxButtons) {
+                  start = Math.max(1, end - maxButtons + 1);
+                }
+                const pages = [];
+                for (let i = start; i <= end; i += 1) pages.push(i);
+                return pages.map((pg) => {
+                  const active = pg === page;
+                  return (
+                    <TouchableOpacity
+                      key={`page-${pg}`}
+                      onPress={() => setPage(pg)}
+                      style={{
+                        minWidth: 28,
+                        paddingHorizontal: 8,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: active ? theme.primary : theme.border,
+                        backgroundColor: active ? `${theme.primary}22` : theme.card,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: active ? theme.primary : theme.textSecondary,
+                          fontSize: 12,
+                          textAlign: "center",
+                        }}
+                      >
+                        {pg}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                });
+              })()}
+            </View>
+            <TouchableOpacity
+              onPress={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={page >= totalPages}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: page >= totalPages ? theme.surface : theme.card,
+                opacity: page >= totalPages ? 0.6 : 1,
+              }}
+            >
+              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>Next</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         <View
           style={{

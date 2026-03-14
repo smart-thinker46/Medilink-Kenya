@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, Image } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Package } from "lucide-react-native";
+import { ArrowLeft, Package, Briefcase } from "lucide-react-native";
 import Svg, { Circle, G } from "react-native-svg";
 
 import ScreenLayout from "@/components/ScreenLayout";
@@ -236,6 +236,41 @@ export default function HospitalAnalyticsScreen() {
             Total amount to pay: {formatMoney(totals.totalAmountToPay)}
           </Text>
         </View>
+
+        <TouchableOpacity
+          onPress={() => router.push("/(app)/(hospital)/staffing")}
+          activeOpacity={0.85}
+          style={{
+            backgroundColor: theme.card,
+            borderRadius: 16,
+            padding: 14,
+            borderWidth: 1,
+            borderColor: theme.border,
+            marginBottom: 14,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                backgroundColor: theme.surface,
+                alignItems: "center",
+                justifyContent: "center",
+                marginRight: 10,
+              }}
+            >
+              <Briefcase color={theme.primary} size={18} />
+            </View>
+            <Text style={{ color: theme.text, fontFamily: "Inter_600SemiBold", fontSize: 16 }}>
+              Staffing
+            </Text>
+          </View>
+          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+            Manage shifts, jobs, and staffing workflows from one place.
+          </Text>
+        </TouchableOpacity>
 
         <View
           style={{

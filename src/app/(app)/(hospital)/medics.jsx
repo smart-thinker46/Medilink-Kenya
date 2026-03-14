@@ -56,10 +56,40 @@ export default function HospitalMedicsScreen() {
   const [experienceMinFilter, setExperienceMinFilter] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
+  const jobsQuery = useQuery({
+    queryKey: ["hospital-jobs", "applications"],
+    queryFn: () => apiClient.getJobs({ mine: true }),
+  });
+
+  const shiftsQuery = useQuery({
+    queryKey: ["hospital-shifts", "applications"],
+    queryFn: () => apiClient.getShifts({ mine: true }),
+  });
+
+  const applicantIds = useMemo(() => {
+    const jobItems = jobsQuery.data?.items || jobsQuery.data || [];
+    const shiftItems = shiftsQuery.data?.items || shiftsQuery.data || [];
+    const ids = new Set();
+    jobItems.forEach((job) => {
+      const apps = Array.isArray(job?.applications) ? job.applications : [];
+      apps.forEach((app) => {
+        if (app?.medicId) ids.add(String(app.medicId));
+      });
+    });
+    shiftItems.forEach((shift) => {
+      const apps = Array.isArray(shift?.applications) ? shift.applications : [];
+      apps.forEach((app) => {
+        if (app?.medicId) ids.add(String(app.medicId));
+      });
+    });
+    return Array.from(ids);
+  }, [jobsQuery.data, shiftsQuery.data]);
+
   const medicsQuery = useQuery({
     queryKey: [
       "medics",
-      "available",
+      "applicants",
+      applicantIds.join(","),
       searchQuery,
       specializationFilter,
       locationFilter,
@@ -68,12 +98,14 @@ export default function HospitalMedicsScreen() {
     ],
     queryFn: () =>
       apiClient.getMedics({
+        medicIds: applicantIds.length ? applicantIds.join(",") : undefined,
         search: searchQuery || undefined,
         specialization: specializationFilter || undefined,
         location: locationFilter || undefined,
         availabilityDay: availabilityFilter || undefined,
         experienceMin: experienceMinFilter || undefined,
       }),
+    enabled: applicantIds.length > 0,
   });
   const medicsRaw = medicsQuery.data?.items || medicsQuery.data || [];
   const myLocationQuery = useQuery({
@@ -353,7 +385,27 @@ export default function HospitalMedicsScreen() {
             )}
           </View>
 
-          {medics.length === 0 && !medicsQuery.isLoading ? (
+          {applicantIds.length === 0 && !jobsQuery.isLoading && !shiftsQuery.isLoading ? (
+            <View
+              style={{
+                backgroundColor: theme.card,
+                borderRadius: 16,
+                padding: 20,
+                borderWidth: 1,
+                borderColor: theme.border,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontFamily: "Inter_400Regular",
+                  color: theme.textSecondary,
+                }}
+              >
+                No medics have applied for your jobs or shifts yet.
+              </Text>
+            </View>
+          ) : medics.length === 0 && !medicsQuery.isLoading ? (
             <View
               style={{
                 backgroundColor: theme.card,

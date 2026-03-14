@@ -16,6 +16,7 @@ import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
 import apiClient from "@/utils/api";
 import { getDistanceKm, getLocationAddressLabel, normalizeLocation } from "@/utils/locationHelpers";
+import { HOSPITAL_SERVICE_CATALOG } from "@/constants/hospitalServiceCatalog";
 
 export default function HospitalServicesSearchScreen() {
   const router = useRouter();
@@ -68,6 +69,15 @@ export default function HospitalServicesSearchScreen() {
       })
       .filter((item) => item.location);
   }, [discoveryQuery.data, myLocation]);
+
+  const suggestions = useMemo(() => {
+    const query = serviceQuery.trim().toLowerCase();
+    if (!query) return [];
+    return HOSPITAL_SERVICE_CATALOG.filter((item) => {
+      const text = `${item.name} ${item.sw || ""} ${item.category || ""}`.toLowerCase();
+      return text.includes(query);
+    }).slice(0, 8);
+  }, [serviceQuery]);
 
   const isLoading = discoveryQuery.isLoading || myLocationQuery.isLoading;
 
@@ -144,6 +154,39 @@ export default function HospitalServicesSearchScreen() {
               }}
             />
           </View>
+          {serviceQuery.trim().length > 0 && (
+            <View style={{ marginTop: 10, gap: 6 }}>
+              {suggestions.length ? (
+                suggestions.map((item, index) => (
+                  <TouchableOpacity
+                    key={`${item.name}-${index}`}
+                    onPress={() => setServiceQuery(item.name)}
+                    style={{
+                      paddingVertical: 8,
+                      paddingHorizontal: 10,
+                      borderRadius: 10,
+                      backgroundColor: theme.surface,
+                      borderWidth: 1,
+                      borderColor: theme.border,
+                    }}
+                  >
+                    <Text style={{ color: theme.text, fontSize: 12, fontFamily: "Inter_600SemiBold" }}>
+                      {item.name}
+                    </Text>
+                    {item.sw ? (
+                      <Text style={{ color: theme.textSecondary, fontSize: 11, marginTop: 2 }}>
+                        {item.sw}
+                      </Text>
+                    ) : null}
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <Text style={{ color: theme.textSecondary, fontSize: 11 }}>
+                  No matching services in the catalog.
+                </Text>
+              )}
+            </View>
+          )}
         </View>
 
         {isLoading ? (
@@ -155,6 +198,18 @@ export default function HospitalServicesSearchScreen() {
         ) : (
           hospitals.map((hospital) => {
             const services = Array.isArray(hospital.services) ? hospital.services : [];
+            const serviceDetails = Array.isArray(hospital.serviceDetails)
+              ? hospital.serviceDetails
+              : [];
+            const detailedLabel = serviceDetails
+              .slice(0, 3)
+              .map((service) => {
+                const name = service?.name || "Service";
+                const category = service?.category ? `• ${service.category}` : "";
+                const availability = service?.availability ? `• ${service.availability}` : "";
+                return `${name} ${category} ${availability}`.replace(/\s+/g, " ").trim();
+              })
+              .filter(Boolean);
             return (
               <TouchableOpacity
                 key={hospital.userId || hospital.id}
@@ -201,8 +256,12 @@ export default function HospitalServicesSearchScreen() {
                   ) : null}
                 </View>
                 <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
-                  Services: {services.length ? services.slice(0, 5).join(", ") : "Not listed yet"}
-                  {services.length > 5 ? "..." : ""}
+                  Services:{" "}
+                  {detailedLabel.length
+                    ? detailedLabel.join(" • ")
+                    : services.length
+                      ? services.slice(0, 5).join(", ")
+                      : "Not listed yet"}
                 </Text>
               </TouchableOpacity>
             );

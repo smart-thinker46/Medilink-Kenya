@@ -45,6 +45,7 @@ import { useToast } from "@/components/ToastProvider";
 import { getFirstName, getTimeGreeting } from "@/utils/greeting";
 import useAiSpeechPlayer from "@/utils/useAiSpeechPlayer";
 import UserAvatar from "@/components/UserAvatar";
+import { previewReceipt } from "@/utils/receiptExport";
 
 export default function AdminOverviewScreen() {
   const router = useRouter();
@@ -137,6 +138,26 @@ export default function AdminOverviewScreen() {
   const recentPayments = [...payments].sort(
     (a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0),
   );
+
+  const handleDownloadReceipt = async (payment) => {
+    try {
+      await previewReceipt({
+        payment,
+        payer: {
+          name: payment?.payerName,
+          email: payment?.payerEmail,
+          phone: payment?.payerPhone,
+        },
+        recipient: {
+          name: payment?.recipientName,
+          role: payment?.recipientRole,
+        },
+      });
+      showToast("Receipt downloaded.", "success");
+    } catch (error) {
+      showToast(error?.message || "Failed to download receipt.", "error");
+    }
+  };
 
   const aiSettingsQuery = useQuery({
     queryKey: ["ai-settings", "admin-overview"],
@@ -881,39 +902,41 @@ export default function AdminOverviewScreen() {
             >
               Admin Menu
             </Text>
-            {sidebarLinks.map((link) => {
-              const Icon = link.icon;
-              const active = pathname === link.href;
-              return (
-                <TouchableOpacity
-                  key={link.key}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    paddingVertical: 10,
-                    paddingHorizontal: 12,
-                    borderRadius: 12,
-                    marginBottom: 6,
-                    backgroundColor: active ? theme.surface : "transparent",
-                  }}
-                  onPress={() => router.push(link.href)}
-                  activeOpacity={0.8}
-                >
-                  <Icon color={active ? theme.primary : theme.iconColor} size={18} />
-                  <Text
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {sidebarLinks.map((link) => {
+                const Icon = link.icon;
+                const active = pathname === link.href;
+                return (
+                  <TouchableOpacity
+                    key={link.key}
                     style={{
-                      fontSize: 14,
-                      fontFamily: "Inter_600SemiBold",
-                      color: active ? theme.primary : theme.text,
-                      marginLeft: 12,
-                      flex: 1,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingVertical: 10,
+                      paddingHorizontal: 12,
+                      borderRadius: 12,
+                      marginBottom: 6,
+                      backgroundColor: active ? theme.surface : "transparent",
                     }}
+                    onPress={() => router.push(link.href)}
+                    activeOpacity={0.8}
                   >
-                    {link.title}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+                    <Icon color={active ? theme.primary : theme.iconColor} size={18} />
+                    <Text
+                      style={{
+                        fontSize: 14,
+                        fontFamily: "Inter_600SemiBold",
+                        color: active ? theme.primary : theme.text,
+                        marginLeft: 12,
+                        flex: 1,
+                      }}
+                    >
+                      {link.title}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </View>
         )}
         <ScrollView
@@ -1512,6 +1535,20 @@ export default function AdminOverviewScreen() {
                   <Text style={{ fontSize: 11, color: theme.textTertiary, marginTop: 2 }}>
                     {formatDateTime ? formatDateTime(payment.createdAt) : payment.createdAt}
                   </Text>
+                  <TouchableOpacity
+                    onPress={() => handleDownloadReceipt(payment)}
+                    style={{ marginTop: 6, alignSelf: "flex-start" }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        color: theme.primary,
+                        fontFamily: "Inter_600SemiBold",
+                      }}
+                    >
+                      Preview Receipt
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               ))
             )}

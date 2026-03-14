@@ -3,7 +3,8 @@ import { View, Text, ScrollView, TouchableOpacity } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MotiView } from "moti";
-import { CheckCircle, Phone, PhoneOff, MessageCircle, Calendar } from "lucide-react-native";
+import { CheckCircle, Phone, PhoneOff, MessageCircle, Calendar, Package } from "lucide-react-native";
+import { useQueryClient } from "@tanstack/react-query";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -16,9 +17,10 @@ export default function NotificationsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useAppTheme();
-  const { notifications, markRead } = useNotifications();
+  const { notifications, markRead, dismissNotification } = useNotifications();
   const { showToast } = useToast();
   const { auth } = useAuthStore();
+  const queryClient = useQueryClient();
 
   const parseNotificationData = (notification) => {
     const raw = notification?.data;
@@ -62,6 +64,26 @@ export default function NotificationsScreen() {
     return query ? `${route}?${query}` : route;
   };
 
+  const getOrderId = (notification) => {
+    const data = parseNotificationData(notification) || {};
+    return String(data.orderId || data.id || notification?.relatedId || "").trim();
+  };
+
+  const handleViewOrder = (notification) => {
+    const orderId = getOrderId(notification);
+    if (!orderId) {
+      showToast("Order reference missing.", "warning");
+      return;
+    }
+    if (!["PHARMACY_ADMIN", "SUPER_ADMIN"].includes(role)) {
+      showToast("Order view not available for this account.", "warning");
+      return;
+    }
+    markRead(notification.id);
+    dismissNotification(notification);
+    router.push(`/(app)/(pharmacy)/orders?orderId=${orderId}`);
+  };
+
   const handleAnswerCall = async (notification) => {
     const data = parseNotificationData(notification) || {};
     const sessionId = data.sessionId || notification?.relatedId;
@@ -70,6 +92,7 @@ export default function NotificationsScreen() {
       return;
     }
     markRead(notification.id);
+    dismissNotification(notification);
     showToast("Opening call screen...", "success");
     const route = roleVideoRoute[role] || "/(app)/(shared)/notifications";
     router.push(buildVideoRoute(route, data, true));
@@ -91,6 +114,7 @@ export default function NotificationsScreen() {
         }),
       });
       markRead(notification.id);
+      dismissNotification(notification);
       showToast("Call rejected.", "success");
     } catch (error) {
       showToast(error.message || "Failed to reject call.", "error");
@@ -112,6 +136,7 @@ export default function NotificationsScreen() {
     try {
       await apiClient.respondSupportChatRequest(requestId, true);
       markRead(notification.id);
+      dismissNotification(notification);
       showToast("Support request accepted.", "success");
       const requesterId = String(data.requesterId || "").trim();
       const route = roleChatRoute[role];
@@ -132,6 +157,7 @@ export default function NotificationsScreen() {
     try {
       await apiClient.respondSupportChatRequest(requestId, false);
       markRead(notification.id);
+      dismissNotification(notification);
       showToast("Support request rejected.", "success");
     } catch (error) {
       showToast(error.message || "Failed to reject support request.", "error");
@@ -151,6 +177,7 @@ export default function NotificationsScreen() {
       return;
     }
     markRead(notification.id);
+    dismissNotification(notification);
     router.push(`${route}?userId=${adminId}`);
   };
 
@@ -169,6 +196,7 @@ export default function NotificationsScreen() {
       return;
     }
     markRead(notification.id);
+    dismissNotification(notification);
     router.push(`${route}?userId=${senderId}`);
   };
 
@@ -182,6 +210,7 @@ export default function NotificationsScreen() {
         await apiClient.markChatRead(senderId);
       }
       markRead(notification.id);
+      dismissNotification(notification);
       showToast("Marked as read.", "success");
     } catch (error) {
       showToast(error.message || "Failed to mark as read.", "error");
@@ -198,6 +227,7 @@ export default function NotificationsScreen() {
       return;
     }
     markRead(notification.id);
+    dismissNotification(notification);
     router.push(`/(app)/(shared)/appointment-details/${appointmentId}`);
   };
 
@@ -224,9 +254,120 @@ export default function NotificationsScreen() {
         requestId: data.requestId || notification?.relatedId || null,
       });
       markRead(notification.id);
+      dismissNotification(notification);
       showToast("Payment initiated. Complete checkout.", "success");
     } catch (error) {
       showToast(error.message || "Failed to initiate payment.", "error");
+    }
+  };
+
+  const getAppointmentId = (notification) => {
+    const data = parseNotificationData(notification) || {};
+    return String(data.appointmentId || data.id || notification?.relatedId || "").trim();
+  };
+
+  const handleApproveAccessRequest = async (notification) => {
+    const appointmentId = getAppointmentId(notification);
+    if (!appointmentId) {
+      showToast("Appointment reference missing.", "warning");
+      return;
+    }
+    try {
+      await apiClient.updateAppointment(appointmentId, { status: "confirmed" });
+      markRead(notification.id);
+      dismissNotification(notification);
+      queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      showToast("Access approved.", "success");
+    } catch (error) {
+      showToast(error.message || "Failed to approve access.", "error");
+    }
+  };
+
+  const handleDenyAccessRequest = async (notification) => {
+    const appointmentId = getAppointmentId(notification);
+    if (!appointmentId) {
+      showToast("Appointment reference missing.", "warning");
+      return;
+    }
+    try {
+      await apiClient.updateAppointment(appointmentId, {
+        status: "cancelled",
+        cancelReason: "Access denied by patient.",
+      });
+      markRead(notification.id);
+      dismissNotification(notification);
+      queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      showToast("Access denied.", "success");
+    } catch (error) {
+      showToast(error.message || "Failed to deny access.", "error");
+    }
+  };
+
+  const getMedicalRecordRequestId = (notification) => {
+    const data = parseNotificationData(notification) || {};
+    return String(data.requestId || notification?.relatedId || "").trim();
+  };
+
+  const handleApproveMedicalRecordAccess = async (notification) => {
+    const requestId = getMedicalRecordRequestId(notification);
+    if (!requestId) {
+      showToast("Access request reference missing.", "warning");
+      return;
+    }
+    try {
+      await apiClient.respondMedicalRecordAccessRequest(requestId, true);
+      markRead(notification.id);
+      dismissNotification(notification);
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      showToast("Medical record access approved.", "success");
+    } catch (error) {
+      showToast(error.message || "Failed to approve request.", "error");
+    }
+  };
+
+  const handleDenyMedicalRecordAccess = async (notification) => {
+    const requestId = getMedicalRecordRequestId(notification);
+    if (!requestId) {
+      showToast("Access request reference missing.", "warning");
+      return;
+    }
+    try {
+      await apiClient.respondMedicalRecordAccessRequest(requestId, false);
+      markRead(notification.id);
+      dismissNotification(notification);
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      showToast("Medical record access denied.", "success");
+    } catch (error) {
+      showToast(error.message || "Failed to deny request.", "error");
+    }
+  };
+
+  const handleViewMedicalRecordRequest = async (notification) => {
+    const data = parseNotificationData(notification) || {};
+    const patientId = String(data.patientId || "").trim();
+    const medicId = String(data.medicId || "").trim();
+    const requestId = getMedicalRecordRequestId(notification);
+    try {
+      const response = await apiClient.getMedicalRecordAccessRequests({
+        status: "PENDING",
+      });
+      const list = response?.items || response || [];
+      const match = list.find((item) => String(item?.id || "") === requestId);
+      const matchedPatientId =
+        String(match?.patientId || patientId || "").trim();
+      if (matchedPatientId) {
+        router.push(`/(app)/(patient)/medical-history?patientId=${matchedPatientId}`);
+        return;
+      }
+      if (medicId) {
+        router.push(`/(app)/(patient)/medical-history?medicId=${medicId}`);
+        return;
+      }
+      showToast("Request details unavailable.", "warning");
+    } catch (error) {
+      showToast(error.message || "Failed to load request details.", "error");
     }
   };
 
@@ -289,6 +430,11 @@ export default function NotificationsScreen() {
                 const isChatNotification = notificationType === "CHAT";
                 const isVideoCall = notificationType === "VIDEO_CALL";
                 const isAppointment = notificationType === "APPOINTMENT";
+                const isAccessRequest = notificationType === "ACCESS_REQUEST";
+                const isOrderActivity =
+                  notificationType === "ORDER_ACTIVITY" ||
+                  String(notification.title || "").toLowerCase().includes("purchase/sale");
+                const isMedicalRecordAccess = notificationType === "MEDICAL_RECORD_ACCESS_REQUEST";
                 return (
                   <>
               <Text
@@ -463,6 +609,155 @@ export default function NotificationsScreen() {
                     <Calendar color="#FFFFFF" size={14} />
                     <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
                       View
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {isOrderActivity && (
+                <View
+                  style={{
+                    marginTop: 10,
+                    flexDirection: "row",
+                    gap: 8,
+                  }}
+                >
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: theme.primary,
+                      gap: 6,
+                    }}
+                    onPress={() => handleViewOrder(notification)}
+                  >
+                    <Package color="#FFFFFF" size={14} />
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
+                      View Order
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {isAccessRequest && role === "PATIENT" && (
+                <View
+                  style={{
+                    marginTop: 10,
+                    flexDirection: "row",
+                    gap: 8,
+                  }}
+                >
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: theme.primary,
+                      gap: 6,
+                    }}
+                    onPress={() => handleViewAppointment(notification)}
+                  >
+                    <Calendar color="#FFFFFF" size={14} />
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
+                      View
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: theme.success,
+                      gap: 6,
+                    }}
+                    onPress={() => handleApproveAccessRequest(notification)}
+                  >
+                    <CheckCircle color="#FFFFFF" size={14} />
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
+                      Approve
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: theme.error,
+                      gap: 6,
+                    }}
+                    onPress={() => handleDenyAccessRequest(notification)}
+                  >
+                    <PhoneOff color="#FFFFFF" size={14} />
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
+                      Deny
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {isMedicalRecordAccess && role === "PATIENT" && (
+                <View
+                  style={{
+                    marginTop: 10,
+                    flexDirection: "row",
+                    gap: 8,
+                  }}
+                >
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: theme.primary,
+                      gap: 6,
+                    }}
+                    onPress={() => handleViewMedicalRecordRequest(notification)}
+                  >
+                    <Calendar color="#FFFFFF" size={14} />
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
+                      View
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: theme.success,
+                      gap: 6,
+                    }}
+                    onPress={() => handleApproveMedicalRecordAccess(notification)}
+                  >
+                    <CheckCircle color="#FFFFFF" size={14} />
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
+                      Approve
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: theme.error,
+                      gap: 6,
+                    }}
+                    onPress={() => handleDenyMedicalRecordAccess(notification)}
+                  >
+                    <PhoneOff color="#FFFFFF" size={14} />
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
+                      Deny
                     </Text>
                   </TouchableOpacity>
                 </View>
