@@ -52,7 +52,46 @@ export default function HospitalShiftsScreen() {
         specialization: specializationFilter || undefined,
       }),
   });
-  const shifts = shiftsQuery.data?.items || shiftsQuery.data || [];
+  const shiftsRaw = shiftsQuery.data?.items || shiftsQuery.data || [];
+  const shifts = useMemo(() => {
+    const items = Array.isArray(shiftsRaw) ? shiftsRaw : [];
+    const normalize = (v) => String(v || "").trim().toLowerCase();
+    const normalizeDate = (v) => String(v || "").trim();
+    const normalizeTime = (v) => {
+      const raw = String(v || "").trim();
+      // Normalize "8:00" -> "08:00" where possible.
+      const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+      if (!match) return raw;
+      const hh = String(match[1] || "").padStart(2, "0");
+      const mm = String(match[2] || "").padStart(2, "0");
+      return `${hh}:${mm}`;
+    };
+    const pickTime = (row) => {
+      const t = row?.updatedAt || row?.createdAt || "";
+      const parsed = t ? new Date(t).getTime() : 0;
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    const keyFor = (row) => {
+      const createdBy = String(row?.createdBy || "").trim();
+      const hospitalKey = normalize(row?.hospitalName || row?.hospital || row?.employerName);
+      const shiftDate = normalizeDate(row?.shiftDate || row?.date);
+      const startTime = normalizeTime(row?.startTime);
+      const endTime = normalizeTime(row?.endTime);
+      const title = normalize(row?.title || row?.task);
+      const department = normalize(row?.department);
+      const specialization = normalize(row?.specialization || row?.category);
+      return `${createdBy}|${hospitalKey}|${shiftDate}|${startTime}|${endTime}|${title}|${department}|${specialization}`;
+    };
+    const map = new Map();
+    items.forEach((row) => {
+      const key = keyFor(row);
+      const existing = map.get(key);
+      if (!existing || pickTime(row) >= pickTime(existing)) {
+        map.set(key, row);
+      }
+    });
+    return Array.from(map.values());
+  }, [shiftsRaw]);
   const visibleShifts = useMemo(() => {
     if (!Array.isArray(shifts)) return [];
 

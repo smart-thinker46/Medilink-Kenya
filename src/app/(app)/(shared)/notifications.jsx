@@ -261,6 +261,51 @@ export default function NotificationsScreen() {
     }
   };
 
+  const getShiftApplicationContext = (notification) => {
+    const data = parseNotificationData(notification) || {};
+    const shiftId = String(data.shiftId || data.id || notification?.relatedId || "").trim();
+    const medicId = String(data.medicId || "").trim();
+    return { shiftId, medicId, data };
+  };
+
+  const handleApproveShiftApplication = async (notification) => {
+    const { shiftId, medicId } = getShiftApplicationContext(notification);
+    if (!shiftId || !medicId) {
+      showToast("Shift application reference missing.", "warning");
+      return;
+    }
+    try {
+      await apiClient.approveShiftApplication(shiftId, medicId);
+      markRead(notification.id);
+      dismissNotification(notification);
+      queryClient.invalidateQueries({ queryKey: ["shifts", "hospital"] });
+      queryClient.invalidateQueries({ queryKey: ["available-shifts"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      showToast("Application approved.", "success");
+    } catch (error) {
+      showToast(error?.message || "Failed to approve application.", "error");
+    }
+  };
+
+  const handleRejectShiftApplication = async (notification) => {
+    const { shiftId, medicId } = getShiftApplicationContext(notification);
+    if (!shiftId || !medicId) {
+      showToast("Shift application reference missing.", "warning");
+      return;
+    }
+    try {
+      await apiClient.rejectShiftApplication(shiftId, medicId);
+      markRead(notification.id);
+      dismissNotification(notification);
+      queryClient.invalidateQueries({ queryKey: ["shifts", "hospital"] });
+      queryClient.invalidateQueries({ queryKey: ["available-shifts"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      showToast("Application denied.", "success");
+    } catch (error) {
+      showToast(error?.message || "Failed to deny application.", "error");
+    }
+  };
+
   const getAppointmentId = (notification) => {
     const data = parseNotificationData(notification) || {};
     return String(data.appointmentId || data.id || notification?.relatedId || "").trim();
@@ -431,6 +476,7 @@ export default function NotificationsScreen() {
                 const isVideoCall = notificationType === "VIDEO_CALL";
                 const isAppointment = notificationType === "APPOINTMENT";
                 const isAccessRequest = notificationType === "ACCESS_REQUEST";
+                const isShiftApplication = notificationType === "SHIFT_APPLICATION_SUBMITTED";
                 const isOrderActivity =
                   notificationType === "ORDER_ACTIVITY" ||
                   String(notification.title || "").toLowerCase().includes("purchase/sale");
@@ -609,6 +655,50 @@ export default function NotificationsScreen() {
                     <Calendar color="#FFFFFF" size={14} />
                     <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
                       View
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {isShiftApplication && ["HOSPITAL_ADMIN", "SUPER_ADMIN"].includes(role) && (
+                <View
+                  style={{
+                    marginTop: 10,
+                    flexDirection: "row",
+                    gap: 8,
+                  }}
+                >
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: theme.success,
+                      gap: 6,
+                    }}
+                    onPress={() => handleApproveShiftApplication(notification)}
+                  >
+                    <CheckCircle color="#FFFFFF" size={14} />
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
+                      Approve
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: theme.error,
+                      gap: 6,
+                    }}
+                    onPress={() => handleRejectShiftApplication(notification)}
+                  >
+                    <PhoneOff color="#FFFFFF" size={14} />
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
+                      Deny
                     </Text>
                   </TouchableOpacity>
                 </View>
