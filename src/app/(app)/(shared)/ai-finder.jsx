@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
+  Switch,
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -511,6 +512,7 @@ export default function AiFinderScreen() {
   const [detectedSpecializations, setDetectedSpecializations] = useState([]);
   const [isVoiceRecording, setIsVoiceRecording] = useState(false);
   const [autoLocationLabel, setAutoLocationLabel] = useState("");
+  const [allowPatientSearch, setAllowPatientSearch] = useState(false);
   const autoLocationPromiseRef = useRef(null);
 
   const ExpoLocation = Platform.OS === "web" ? null : require("expo-location");
@@ -551,6 +553,7 @@ export default function AiFinderScreen() {
   const isPremium = Boolean(aiSettingsQuery.data?.isPremium);
   const blockedReason = String(aiSettingsQuery.data?.blockedReason || "");
   const role = String(auth?.user?.role || "").toUpperCase();
+  const isSuperAdmin = role === "SUPER_ADMIN";
   const displayName = useMemo(() => resolveDisplayName(auth?.user), [auth?.user]);
   const hasRedirectedToPaymentRef = useRef(false);
   const [hasTriggeredGreeting, setHasTriggeredGreeting] = useState(false);
@@ -807,10 +810,18 @@ export default function AiFinderScreen() {
       const include = nextScope === "medic" ? ["medic"] : ["pharmacy"];
       const includeWithProducts =
         nextScope === "medicine" ? ["product", "pharmacy"] : include;
+      const wantsPatient =
+        isSuperAdmin &&
+        allowPatientSearch &&
+        /(patient|patients|client|clients|member|members)/i.test(normalizedQuery);
+      const includeWithPatients = wantsPatient
+        ? Array.from(new Set([...includeWithProducts, "patient"]))
+        : includeWithProducts;
       const response = await apiClient.aiSearch({
         query: normalizedQuery,
-        include: includeWithProducts,
+        include: includeWithPatients,
         limit: 12,
+        allowPatientSearch: wantsPatient,
       });
       const searchResults = emptyIfNotArray(response?.results);
       return {
@@ -1213,6 +1224,38 @@ export default function AiFinderScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {isSuperAdmin && (
+          <View
+            style={{
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: theme.border,
+              backgroundColor: theme.card,
+              padding: 10,
+              marginBottom: 12,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 12, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                Allow patient search
+              </Text>
+              <Text style={{ marginTop: 2, fontSize: 11, color: theme.textSecondary }}>
+                Admin-only. Enables explicit patient lookup in AI results.
+              </Text>
+            </View>
+            <Switch
+              value={allowPatientSearch}
+              onValueChange={setAllowPatientSearch}
+              trackColor={{ false: theme.border, true: theme.primary }}
+              thumbColor={allowPatientSearch ? "#fff" : theme.card}
+            />
+          </View>
+        )}
 
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
           {SCOPES.map((item) => {

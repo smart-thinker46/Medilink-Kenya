@@ -30,6 +30,7 @@ import * as WebBrowser from "expo-web-browser";
 
 import Input from "@/components/Input";
 import Button from "@/components/Button";
+import CaptchaChallenge from "@/components/CaptchaChallenge";
 import { useAppTheme } from "@/components/ThemeProvider";
 import { useAuthStore } from "@/utils/auth/store";
 import apiClient from "@/utils/api";
@@ -66,6 +67,8 @@ export default function SignupScreen() {
   });
 
   const [errors, setErrors] = useState({});
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaKey, setCaptchaKey] = useState(0);
 
   const [googleRequest, googleResponse, promptGoogleSignUp] =
     Google.useIdTokenAuthRequest({
@@ -121,6 +124,8 @@ export default function SignupScreen() {
       );
     },
     onError: (error) => {
+      setCaptchaToken("");
+      setCaptchaKey((prev) => prev + 1);
       Alert.alert(t("signup_failed"), error.message || "Please try again");
     },
   });
@@ -240,6 +245,10 @@ export default function SignupScreen() {
   };
 
   const handleSubmit = () => {
+    if (!captchaToken) {
+      Alert.alert("Verification required", "Complete the security check to continue.");
+      return;
+    }
     const roleMap = {
       patient: "PATIENT",
       medic: "MEDIC",
@@ -259,6 +268,7 @@ export default function SignupScreen() {
       fullName: `${trimmedFullName} ${formData.lastName}`.trim(),
       phone: formData.phone,
       role: roleMap[selectedRole],
+      captchaToken,
     };
 
     signupMutation.mutate(submitData);
@@ -653,10 +663,19 @@ export default function SignupScreen() {
                 </TouchableOpacity>
               ) : null}
 
+              {step === 2 && (
+                <CaptchaChallenge
+                  key={`signup-captcha-${captchaKey}`}
+                  onVerified={(token) => setCaptchaToken(token)}
+                  helperText="Complete the security check to create your account."
+                />
+              )}
+
               <Button
                 title={step === 2 ? t("create_account") : t("next")}
                 onPress={handleNext}
                 loading={signupMutation.isLoading}
+                disabled={step === 2 && !captchaToken}
                 style={{ marginBottom: 16 }}
               />
 

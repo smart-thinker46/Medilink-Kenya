@@ -19,6 +19,7 @@ import * as WebBrowser from "expo-web-browser";
 
 import Input from "@/components/Input";
 import Button from "@/components/Button";
+import CaptchaChallenge from "@/components/CaptchaChallenge";
 import { useAppTheme } from "@/components/ThemeProvider";
 import { useAuthStore } from "@/utils/auth/store";
 import apiClient from "@/utils/api";
@@ -47,6 +48,8 @@ export default function LoginScreen() {
   });
   const [otpChallengeId, setOtpChallengeId] = useState("");
   const [otpDestination, setOtpDestination] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaKey, setCaptchaKey] = useState(0);
 
   const [errors, setErrors] = useState({});
 
@@ -105,12 +108,14 @@ export default function LoginScreen() {
   };
 
   const loginMutation = useMutation({
-    mutationFn: ({ email, password, otp, challengeId }) =>
-      apiClient.login(email.trim().toLowerCase(), password, otp, challengeId),
+    mutationFn: ({ email, password, otp, challengeId, captchaToken: token }) =>
+      apiClient.login(email.trim().toLowerCase(), password, otp, challengeId, token),
     onSuccess: (data) => {
       if (data?.requiresOtp) {
         setOtpChallengeId(String(data?.challengeId || ""));
         setOtpDestination(String(data?.destination || ""));
+        setCaptchaToken("");
+        setCaptchaKey((prev) => prev + 1);
         Alert.alert(
           "OTP sent",
           `We've sent a verification code to ${data?.destination || "your email"}.`,
@@ -120,6 +125,8 @@ export default function LoginScreen() {
       completeLogin(data);
     },
     onError: (error) => {
+      setCaptchaToken("");
+      setCaptchaKey((prev) => prev + 1);
       const message = String(error?.message || "Please try again");
       if (message.toLowerCase().includes("password expired")) {
         Alert.alert(
@@ -196,11 +203,16 @@ export default function LoginScreen() {
 
   const handleLogin = () => {
     if (validateForm()) {
+      if (!otpChallengeId && !captchaToken) {
+        Alert.alert("Verification required", "Complete the security check to continue.");
+        return;
+      }
       loginMutation.mutate({
         email: formData.email,
         password: formData.password,
         otp: otpChallengeId ? String(formData.otp || "").trim() : undefined,
         challengeId: otpChallengeId || undefined,
+        captchaToken: otpChallengeId ? undefined : captchaToken,
       });
     }
   };
@@ -451,10 +463,19 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               )}
 
+              {!otpChallengeId && (
+                <CaptchaChallenge
+                  key={`login-captcha-${captchaKey}`}
+                  onVerified={(token) => setCaptchaToken(token)}
+                  helperText="Complete the security check to sign in."
+                />
+              )}
+
               <Button
                 title={otpChallengeId ? "Verify OTP" : t("sign_in")}
                 onPress={handleLogin}
                 loading={loginMutation.isLoading}
+                disabled={!otpChallengeId && !captchaToken}
                 style={{ marginBottom: 24 }}
               />
 

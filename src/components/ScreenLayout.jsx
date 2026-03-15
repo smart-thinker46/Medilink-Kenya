@@ -5,16 +5,38 @@ import { useAppTheme } from "./ThemeProvider";
 import { useAuthStore } from "@/utils/auth/store";
 import { useRouter } from "expo-router";
 import { ArrowLeft } from "lucide-react-native";
+import { usePathname } from "expo-router";
+import { useSecureScreen } from "@/utils/security/useSecureScreen";
 
-export default function ScreenLayout({ children, style, showWebBack = false }) {
+export default function ScreenLayout({ children, style, showWebBack = false, secure }) {
   const { theme, colorScheme } = useAppTheme();
   const { auth, setAuth } = useAuthStore();
   const router = useRouter();
+  const pathname = usePathname();
   const isBlocked =
     auth?.user?.status === "suspended" || Boolean(auth?.user?.blocked);
+  const requiresVerification = Boolean(auth?.user?.identityVerificationRequired);
+  const role = String(auth?.user?.role || "").toUpperCase();
   const isWeb = Platform.OS === "web";
   const canGoBack =
     isWeb && typeof window !== "undefined" ? window.history.length > 1 : false;
+
+  const autoSecure =
+    typeof secure === "boolean"
+      ? secure
+      : /health|medical|record|payment|audit|prescription|orders|appointments|profile/i.test(
+          pathname || "",
+        );
+  useSecureScreen(autoSecure);
+
+  const verificationRoute =
+    role === "MEDIC"
+      ? "/(app)/(medic)/edit-profile"
+      : role === "HOSPITAL_ADMIN"
+        ? "/(app)/(hospital)/edit-profile"
+        : role === "PHARMACY_ADMIN"
+          ? "/(app)/(pharmacy)/edit-profile"
+          : "/(app)/(patient)/edit-profile";
 
   return (
     <View
@@ -64,6 +86,49 @@ export default function ScreenLayout({ children, style, showWebBack = false }) {
               Back
             </Text>
           </TouchableOpacity>
+        )}
+        {requiresVerification && (
+          <View
+            style={{
+              marginTop: isWeb ? 48 : 12,
+              marginHorizontal: 12,
+              marginBottom: 12,
+              borderRadius: 14,
+              borderWidth: 1,
+              borderColor: theme.warning,
+              backgroundColor: `${theme.warning}1A`,
+              padding: 12,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 13,
+                fontFamily: "Inter_600SemiBold",
+                color: theme.text,
+                marginBottom: 6,
+              }}
+            >
+              Identity verification required
+            </Text>
+            <Text style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 10 }}>
+              We detected unusual activity. Please complete identity verification to keep your
+              account active.
+            </Text>
+            <TouchableOpacity
+              onPress={() => router.push(verificationRoute)}
+              style={{
+                alignSelf: "flex-start",
+                paddingVertical: 8,
+                paddingHorizontal: 12,
+                borderRadius: 10,
+                backgroundColor: theme.primary,
+              }}
+            >
+              <Text style={{ fontSize: 12, color: "#fff", fontFamily: "Inter_600SemiBold" }}>
+                Verify now
+              </Text>
+            </TouchableOpacity>
+          </View>
         )}
         {children}
       </View>

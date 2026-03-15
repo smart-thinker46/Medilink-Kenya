@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  Switch,
   useWindowDimensions,
   Platform,
 } from "react-native";
@@ -225,6 +226,7 @@ export default function AdminOverviewScreen() {
   const [aiEmailDraftResponse, setAiEmailDraftResponse] = useState(null);
   const [helpDeskQuery, setHelpDeskQuery] = useState("");
   const [helpDeskResponse, setHelpDeskResponse] = useState(null);
+  const [allowPatientSearch, setAllowPatientSearch] = useState(false);
   const [isHelpDeskVoiceRecording, setIsHelpDeskVoiceRecording] = useState(false);
   const helpDeskAudioRecorder = useAudioRecorder({
     ...RecordingPresets.HIGH_QUALITY,
@@ -377,7 +379,11 @@ export default function AdminOverviewScreen() {
   };
 
   const aiUserAssistantMutation = useMutation({
-    mutationFn: (query) => apiClient.aiAdminUsersAssistant({ query }),
+    mutationFn: ({ query, allowPatientSearch: allowPatients }) =>
+      apiClient.aiAdminUsersAssistant({
+        query,
+        allowPatientSearch: Boolean(allowPatients),
+      }),
     onSuccess: (data) => {
       setAiUserResponse(data || null);
       showToast("AI user search completed.", "success");
@@ -420,12 +426,13 @@ export default function AdminOverviewScreen() {
   });
 
   const aiHelpDeskMutation = useMutation({
-    mutationFn: ({ query, execute }) =>
+    mutationFn: ({ query, execute, allowPatientSearch: allowPatients }) =>
       apiClient.aiAdminOpsCopilot({
         query,
         execute: Boolean(execute),
         tone: aiEmailTone,
         audience: aiEmailAudience,
+        allowPatientSearch: Boolean(allowPatients),
       }),
     onSuccess: async (data, variables) => {
       let executionReports = [];
@@ -541,7 +548,11 @@ export default function AdminOverviewScreen() {
         return;
       }
       setHelpDeskQuery(transcript);
-      aiHelpDeskMutation.mutate({ query: transcript, execute: true });
+      aiHelpDeskMutation.mutate({
+        query: transcript,
+        execute: true,
+        allowPatientSearch,
+      });
     },
     onError: (error) => {
       showToast(error?.message || "Voice transcription failed.", "error");
@@ -870,6 +881,12 @@ export default function AdminOverviewScreen() {
     { key: "control-center", title: "Control Center", href: "/(app)/(admin)/control-center", icon: ShieldAlert },
     { key: "complaints", title: "Complaints", href: "/(app)/(admin)/complaints", icon: ShieldAlert },
     { key: "audit", title: "Audit Logs", href: "/(app)/(admin)/audit-logs", icon: Settings },
+    {
+      key: "fraud-alerts",
+      title: "Fraud Alerts",
+      href: "/(app)/(admin)/fraud-alerts",
+      icon: ShieldAlert,
+    },
     { key: "chat", title: "Chat", href: "/(app)/(shared)/conversations", icon: MessageCircle },
     { key: "notifications", title: "Notifications", href: "/(app)/(admin)/notifications", icon: Bell },
     { key: "email-center", title: "Email Center", href: "/(app)/(admin)/email-center", icon: Mail },
@@ -1796,8 +1813,42 @@ export default function AdminOverviewScreen() {
                 backgroundColor: theme.surface,
               }}
             />
+            <View
+              style={{
+                marginTop: 10,
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 10,
+                padding: 10,
+                backgroundColor: theme.surface,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                  Allow patient search
+                </Text>
+                <Text style={{ marginTop: 2, fontSize: 11, color: theme.textSecondary }}>
+                  Admin-only. Requires explicit consent to include patient results.
+                </Text>
+              </View>
+              <Switch
+                value={allowPatientSearch}
+                onValueChange={setAllowPatientSearch}
+                trackColor={{ false: theme.border, true: theme.primary }}
+                thumbColor={allowPatientSearch ? "#fff" : theme.card}
+              />
+            </View>
             <TouchableOpacity
-              onPress={() => aiUserAssistantMutation.mutate(aiUserQuery.trim())}
+              onPress={() =>
+                aiUserAssistantMutation.mutate({
+                  query: aiUserQuery.trim(),
+                  allowPatientSearch,
+                })
+              }
               disabled={!aiCanUse || !aiUserQuery.trim() || aiUserAssistantMutation.isLoading}
               style={{
                 marginTop: 10,
@@ -1896,6 +1947,35 @@ export default function AdminOverviewScreen() {
               Ask app questions or request tasks like: "filter suspended medics", "create support ticket for login issue",
               "export compliance snapshot", "disable feature flag ai_voice_enabled".
             </Text>
+            <View
+              style={{
+                marginTop: 10,
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 10,
+                padding: 10,
+                backgroundColor: theme.surface,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                  Allow patient search
+                </Text>
+                <Text style={{ marginTop: 2, fontSize: 11, color: theme.textSecondary }}>
+                  Applies to help desk user search actions.
+                </Text>
+              </View>
+              <Switch
+                value={allowPatientSearch}
+                onValueChange={setAllowPatientSearch}
+                trackColor={{ false: theme.border, true: theme.primary }}
+                thumbColor={allowPatientSearch ? "#fff" : theme.card}
+              />
+            </View>
             <TextInput
               value={helpDeskQuery}
               onChangeText={setHelpDeskQuery}
@@ -1919,7 +1999,13 @@ export default function AdminOverviewScreen() {
             />
             <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
               <TouchableOpacity
-                onPress={() => aiHelpDeskMutation.mutate({ query: helpDeskQuery.trim(), execute: false })}
+                onPress={() =>
+                  aiHelpDeskMutation.mutate({
+                    query: helpDeskQuery.trim(),
+                    execute: false,
+                    allowPatientSearch,
+                  })
+                }
                 disabled={
                   !aiCanUse ||
                   !helpDeskQuery.trim() ||
@@ -1950,7 +2036,13 @@ export default function AdminOverviewScreen() {
                 )}
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => aiHelpDeskMutation.mutate({ query: helpDeskQuery.trim(), execute: true })}
+                onPress={() =>
+                  aiHelpDeskMutation.mutate({
+                    query: helpDeskQuery.trim(),
+                    execute: true,
+                    allowPatientSearch,
+                  })
+                }
                 disabled={
                   !aiCanUse ||
                   !helpDeskQuery.trim() ||

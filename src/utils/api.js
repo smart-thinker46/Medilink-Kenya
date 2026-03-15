@@ -4,6 +4,13 @@ import Constants from "expo-constants";
 import { useAuthStore } from "../utils/auth/store";
 import { exportReceipt } from "./receiptExport";
 
+let sslFetch = null;
+try {
+  sslFetch = require("react-native-ssl-pinning").fetch;
+} catch {
+  sslFetch = null;
+}
+
 const normalizeBaseUrl = (value) => {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -52,6 +59,85 @@ const resolveApiBaseUrls = () => {
 
 const API_BASE_URLS = resolveApiBaseUrls();
 const API_BASE_URL = API_BASE_URLS[0] || "";
+const ALLOW_INSECURE_HTTP =
+  String(process.env.EXPO_PUBLIC_ALLOW_INSECURE_HTTP || "").toLowerCase() === "true";
+const SSL_PINNING_ENABLED =
+  String(process.env.EXPO_PUBLIC_SSL_PINNING || "").toLowerCase() === "true";
+const SSL_PINNING_CERTS = String(process.env.EXPO_PUBLIC_SSL_PINNING_CERTS || "")
+  .split(",")
+  .map((item) => item.trim().toLowerCase())
+  .filter(Boolean);
+const isLocalhost = (value) =>
+  /^(http:\/\/)(localhost|127\.0\.0\.1|10\.0\.2\.2|192\.168\.)/i.test(
+    String(value || ""),
+  );
+const isHttps = (value) => String(value || "").startsWith("https://");
+
+const joinUrl = (base, url) => {
+  if (!base) return url;
+  if (/^https?:\/\//i.test(url)) return url;
+  const cleanedBase = String(base).replace(/\/+$/, "");
+  const cleanedUrl = String(url || "");
+  if (!cleanedUrl) return cleanedBase;
+  return `${cleanedBase}${cleanedUrl.startsWith("/") ? "" : "/"}${cleanedUrl}`;
+};
+
+const createPinnedAdapter = (defaultAdapter) => async (config) => {
+  const url = joinUrl(config.baseURL || "", config.url || "");
+  const shouldPin =
+    sslFetch &&
+    SSL_PINNING_ENABLED &&
+    SSL_PINNING_CERTS.length > 0 &&
+    isHttps(url) &&
+    !isLocalhost(url);
+  if (!shouldPin) {
+    return defaultAdapter ? defaultAdapter(config) : Promise.reject(config);
+  }
+
+  const method = String(config.method || "get").toUpperCase();
+  const headers = { ...(config.headers || {}) };
+  let body = config.data;
+  const isFormData =
+    typeof FormData !== "undefined" && body instanceof FormData;
+  if (body && typeof body === "object" && !isFormData) {
+    body = JSON.stringify(body);
+    if (!headers["Content-Type"]) {
+      headers["Content-Type"] = "application/json";
+    }
+  }
+
+  const response = await sslFetch(url, {
+    method,
+    headers,
+    body,
+    sslPinning: { certs: SSL_PINNING_CERTS },
+    timeoutInterval: Number(config.timeout || 45000),
+  });
+
+  let data = null;
+  if (config.responseType === "text") {
+    data = response.bodyString ?? "";
+  } else if (config.responseType === "arraybuffer") {
+    data = response.bodyString
+      ? Uint8Array.from(atob(response.bodyString), (c) => c.charCodeAt(0))
+      : null;
+  } else {
+    try {
+      data = await response.json();
+    } catch {
+      data = response.bodyString ?? null;
+    }
+  }
+
+  return {
+    data,
+    status: response.status,
+    statusText: String(response.status),
+    headers: response.headers,
+    config,
+    request: null,
+  };
+};
 
 class ApiClient {
   constructor() {
@@ -81,6 +167,10 @@ class ApiClient {
       // Render cold starts can exceed 15s, especially on free tier.
       timeout: 45000,
     });
+    if (Platform.OS !== "web" && SSL_PINNING_ENABLED && sslFetch) {
+      const defaultAdapter = this.client.defaults.adapter;
+      this.client.defaults.adapter = createPinnedAdapter(defaultAdapter);
+    }
 
     // Request Interceptor: Add Auth Token & Tenant ID
     this.client.interceptors.request.use(
@@ -89,6 +179,14 @@ class ApiClient {
           this.hasWarnedBaseUrl = true;
           console.error(
             "API Error: EXPO_PUBLIC_BASE_URL is missing. Set it in apps/mobile/.env (or EXPO_PUBLIC_BASE_URLS for fallbacks).",
+          );
+        }
+        const baseUrl = String(config.baseURL || "");
+        const isDev =
+          typeof __DEV__ !== "undefined" && __DEV__ || ALLOW_INSECURE_HTTP;
+        if (!isDev && baseUrl && !isHttps(baseUrl) && !isLocalhost(baseUrl)) {
+          throw new Error(
+            "Insecure API base URL blocked. Use HTTPS for production.",
           );
         }
         const auth = useAuthStore.getState().auth;
@@ -260,12 +358,13 @@ class ApiClient {
   }
 
   // Auth endpoints
-  async login(email, password, otp, challengeId) {
+  async login(email, password, otp, challengeId, captchaToken) {
     return this.client.post("/auth/login", {
       email,
       password,
       otp: otp || undefined,
       challengeId: challengeId || undefined,
+      captchaToken: captchaToken || undefined,
     });
   }
 
@@ -281,12 +380,27 @@ class ApiClient {
     });
   }
 
-  async forgotPassword(email) {
-    return this.client.post("/auth/forgot-password", { email });
+  async forgotPassword(email, captchaToken) {
+    return this.client.post("/auth/forgot-password", {
+      email,
+      captchaToken: captchaToken || undefined,
+    });
   }
 
-  async resetPassword(token, password) {
-    return this.client.post("/auth/reset-password", { token, password });
+  async resetPassword(token, password, captchaToken) {
+    return this.client.post("/auth/reset-password", {
+      token,
+      password,
+      captchaToken: captchaToken || undefined,
+    });
+  }
+
+  async captchaGenerate(payload = {}) {
+    return this.client.post("/captcha/generate", payload);
+  }
+
+  async captchaVerify(id, answer) {
+    return this.client.post("/captcha/verify", { id, answer });
   }
 
   // User endpoints
@@ -904,8 +1018,8 @@ class ApiClient {
     return this.client.post("/admin/users/delete/bulk", payload);
   }
 
-  async adminGetAuditLogs() {
-    return this.client.get("/admin/audit-logs");
+  async adminGetAuditLogs(params = {}) {
+    return this.client.get("/admin/audit-logs", { params });
   }
 
   async adminGetShifts() {

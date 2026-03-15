@@ -3,6 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, TextInput } from "react-nativ
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { MotiView } from "moti";
+import { useLocalSearchParams } from "expo-router";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -14,14 +15,30 @@ export default function AdminAuditLogsScreen() {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useAppTheme();
   const { showToast } = useToast();
+  const params = useLocalSearchParams();
+  const initialAction =
+    typeof params?.action === "string" ? String(params.action || "").trim() : "";
+  const headerTitle =
+    typeof params?.title === "string" && params.title.trim()
+      ? params.title.trim()
+      : "Audit Log";
   const [startDate, setStartDate] = React.useState("");
   const [endDate, setEndDate] = React.useState("");
-  const [actionFilter, setActionFilter] = React.useState("");
+  const [actionFilter, setActionFilter] = React.useState(initialAction);
+  const [searchFilter, setSearchFilter] = React.useState("");
+  const [resourceFilter, setResourceFilter] = React.useState("");
+  const [userIdFilter, setUserIdFilter] = React.useState("");
+  const [tenantIdFilter, setTenantIdFilter] = React.useState("");
+  const [ipFilter, setIpFilter] = React.useState("");
+  const [showFilters, setShowFilters] = React.useState(true);
+  const [page, setPage] = React.useState(1);
+  const pageSize = 50;
 
   const applyPreset = (days) => {
     if (!days) {
       setStartDate("");
       setEndDate("");
+      setPage(1);
       return;
     }
     const now = new Date();
@@ -30,40 +47,58 @@ export default function AdminAuditLogsScreen() {
     const format = (date) => date.toISOString().slice(0, 10);
     setStartDate(format(start));
     setEndDate(format(now));
+    setPage(1);
+  };
+
+  const clearFilters = () => {
+    setActionFilter("");
+    setSearchFilter("");
+    setResourceFilter("");
+    setUserIdFilter("");
+    setTenantIdFilter("");
+    setIpFilter("");
+    setStartDate("");
+    setEndDate("");
+    setPage(1);
   };
 
   const logsQuery = useQuery({
-    queryKey: ["admin-audit-logs"],
-    queryFn: () => apiClient.adminGetAuditLogs(),
+    queryKey: [
+      "admin-audit-logs",
+      actionFilter,
+      searchFilter,
+      resourceFilter,
+      userIdFilter,
+      tenantIdFilter,
+      ipFilter,
+      startDate,
+      endDate,
+      page,
+    ],
+    queryFn: () =>
+      apiClient.adminGetAuditLogs({
+        action: actionFilter || undefined,
+        resource: resourceFilter || undefined,
+        userId: userIdFilter || undefined,
+        tenantId: tenantIdFilter || undefined,
+        ip: ipFilter || undefined,
+        search: searchFilter || undefined,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        page,
+        pageSize,
+      }),
   });
   const reportQuery = useQuery({
     queryKey: ["admin-activity-report"],
     queryFn: () => apiClient.adminGetActivityReport(),
   });
-  const logs = logsQuery.data || [];
+  const logs = logsQuery.data?.items || [];
+  const total = logsQuery.data?.total || 0;
   const filteredLogs = React.useMemo(() => {
     let list = [...logs];
-    if (actionFilter) {
-      const needle = actionFilter.toLowerCase();
-      list = list.filter((log) => (log.action || "").toLowerCase().includes(needle));
-    }
-    if (startDate || endDate) {
-      const start = startDate ? new Date(startDate) : null;
-      const end = endDate ? new Date(endDate) : null;
-      list = list.filter((log) => {
-        if (!log.createdAt) return false;
-        const date = new Date(log.createdAt);
-        if (start && date < start) return false;
-        if (end) {
-          const endOfDay = new Date(end);
-          endOfDay.setHours(23, 59, 59, 999);
-          if (date > endOfDay) return false;
-        }
-        return true;
-      });
-    }
     return list;
-  }, [logs, actionFilter, startDate, endDate]);
+  }, [logs]);
 
   return (
     <ScreenLayout>
@@ -84,28 +119,251 @@ export default function AdminAuditLogsScreen() {
             marginBottom: 16,
           }}
         >
-          Audit Log
+          {headerTitle}
         </Text>
 
-        <View style={{ flexDirection: "row", gap: 12, marginBottom: 16 }}>
-          <TextInput
-            placeholder="Filter action"
-            placeholderTextColor={theme.textSecondary}
-            value={actionFilter}
-            onChangeText={setActionFilter}
+        <TouchableOpacity
+          style={{
+            marginBottom: 12,
+            paddingVertical: 10,
+            paddingHorizontal: 12,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: theme.border,
+            backgroundColor: theme.card,
+            alignSelf: "flex-start",
+          }}
+          onPress={() => setShowFilters((value) => !value)}
+        >
+          <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: theme.text }}>
+            {showFilters ? "Hide Filters" : "Show Filters"}
+          </Text>
+        </TouchableOpacity>
+
+        {showFilters && (
+          <View
             style={{
-              flex: 1,
-              height: 44,
-              borderRadius: 12,
+              backgroundColor: theme.card,
+              borderRadius: 16,
+              padding: 16,
               borderWidth: 1,
               borderColor: theme.border,
-              backgroundColor: theme.surface,
-              paddingHorizontal: 12,
-              color: theme.text,
-              fontSize: 12,
+              marginBottom: 16,
+              gap: 12,
             }}
-          />
-        </View>
+          >
+            <TextInput
+              placeholder="Filter action"
+              placeholderTextColor={theme.textSecondary}
+              value={actionFilter}
+              onChangeText={(value) => {
+                setActionFilter(value);
+                setPage(1);
+              }}
+              style={{
+                height: 44,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: theme.surface,
+                paddingHorizontal: 12,
+                color: theme.text,
+                fontSize: 12,
+              }}
+            />
+            <TextInput
+              placeholder="Filter resource"
+              placeholderTextColor={theme.textSecondary}
+              value={resourceFilter}
+              onChangeText={(value) => {
+                setResourceFilter(value);
+                setPage(1);
+              }}
+              style={{
+                height: 44,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: theme.surface,
+                paddingHorizontal: 12,
+                color: theme.text,
+                fontSize: 12,
+              }}
+            />
+            <TextInput
+              placeholder="Filter user ID"
+              placeholderTextColor={theme.textSecondary}
+              value={userIdFilter}
+              onChangeText={(value) => {
+                setUserIdFilter(value);
+                setPage(1);
+              }}
+              style={{
+                height: 44,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: theme.surface,
+                paddingHorizontal: 12,
+                color: theme.text,
+                fontSize: 12,
+              }}
+            />
+            <TextInput
+              placeholder="Filter tenant ID"
+              placeholderTextColor={theme.textSecondary}
+              value={tenantIdFilter}
+              onChangeText={(value) => {
+                setTenantIdFilter(value);
+                setPage(1);
+              }}
+              style={{
+                height: 44,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: theme.surface,
+                paddingHorizontal: 12,
+                color: theme.text,
+                fontSize: 12,
+              }}
+            />
+            <TextInput
+              placeholder="Filter IP address"
+              placeholderTextColor={theme.textSecondary}
+              value={ipFilter}
+              onChangeText={(value) => {
+                setIpFilter(value);
+                setPage(1);
+              }}
+              style={{
+                height: 44,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: theme.surface,
+                paddingHorizontal: 12,
+                color: theme.text,
+                fontSize: 12,
+              }}
+            />
+            <TextInput
+              placeholder="Search (user, IP, resource)"
+              placeholderTextColor={theme.textSecondary}
+              value={searchFilter}
+              onChangeText={(value) => {
+                setSearchFilter(value);
+                setPage(1);
+              }}
+              style={{
+                height: 44,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: theme.surface,
+                paddingHorizontal: 12,
+                color: theme.text,
+                fontSize: 12,
+              }}
+            />
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <TextInput
+                placeholder="Start date (YYYY-MM-DD)"
+                placeholderTextColor={theme.textSecondary}
+                value={startDate}
+                onChangeText={(value) => {
+                  setStartDate(value);
+                  setPage(1);
+                }}
+                style={{
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  backgroundColor: theme.surface,
+                  paddingHorizontal: 12,
+                  color: theme.text,
+                  fontSize: 12,
+                }}
+              />
+              <TextInput
+                placeholder="End date (YYYY-MM-DD)"
+                placeholderTextColor={theme.textSecondary}
+                value={endDate}
+                onChangeText={(value) => {
+                  setEndDate(value);
+                  setPage(1);
+                }}
+                style={{
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  backgroundColor: theme.surface,
+                  paddingHorizontal: 12,
+                  color: theme.text,
+                  fontSize: 12,
+                }}
+              />
+            </View>
+            <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+              <TouchableOpacity
+                style={{
+                  paddingVertical: 8,
+                  paddingHorizontal: 12,
+                  borderRadius: 12,
+                  backgroundColor: theme.surface,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                }}
+                onPress={() => {
+                  setActionFilter("FRAUD_");
+                  setPage(1);
+                }}
+              >
+                <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: theme.text }}>
+                  Fraud only
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{
+                  paddingVertical: 8,
+                  paddingHorizontal: 12,
+                  borderRadius: 12,
+                  backgroundColor: theme.surface,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                }}
+                onPress={() => {
+                  setActionFilter("");
+                  setPage(1);
+                }}
+              >
+                <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: theme.text }}>
+                  All actions
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={{
+                alignSelf: "flex-start",
+                paddingVertical: 8,
+                paddingHorizontal: 12,
+                borderRadius: 12,
+                backgroundColor: theme.surface,
+                borderWidth: 1,
+                borderColor: theme.border,
+              }}
+              onPress={clearFilters}
+            >
+              <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: theme.text }}>
+                Clear filters
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
           {[
@@ -136,43 +394,6 @@ export default function AdminAuditLogsScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
-
-        <View style={{ flexDirection: "row", gap: 12, marginBottom: 16 }}>
-          <TextInput
-            placeholder="Start date (YYYY-MM-DD)"
-            placeholderTextColor={theme.textSecondary}
-            value={startDate}
-            onChangeText={setStartDate}
-            style={{
-              flex: 1,
-              height: 44,
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: theme.border,
-              backgroundColor: theme.surface,
-              paddingHorizontal: 12,
-              color: theme.text,
-              fontSize: 12,
-            }}
-          />
-          <TextInput
-            placeholder="End date (YYYY-MM-DD)"
-            placeholderTextColor={theme.textSecondary}
-            value={endDate}
-            onChangeText={setEndDate}
-            style={{
-              flex: 1,
-              height: 44,
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: theme.border,
-              backgroundColor: theme.surface,
-              paddingHorizontal: 12,
-              color: theme.text,
-              fontSize: 12,
-            }}
-          />
         </View>
 
         {filteredLogs.length === 0 ? (
@@ -215,13 +436,63 @@ export default function AdminAuditLogsScreen() {
                 {log.action || "ACTION"}
               </Text>
               <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 6 }}>
+                User: {log.userName || log.userEmail || log.userId || "--"}
+              </Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 4 }}>
+                Resource: {log.resource || "--"}
+              </Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 4 }}>
                 Target: {log.targetId || "--"}
+              </Text>
+              <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 4 }}>
+                IP: {log.ipAddress || "--"}
               </Text>
               <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 6 }}>
                 {log.createdAt || ""}
               </Text>
             </MotiView>
           ))
+        )}
+
+        {total > pageSize && (
+          <View style={{ flexDirection: "row", gap: 12, marginTop: 8 }}>
+            <TouchableOpacity
+              disabled={page <= 1}
+              style={{
+                flex: 1,
+                backgroundColor: page <= 1 ? theme.card : theme.surface,
+                borderRadius: 12,
+                paddingVertical: 10,
+                alignItems: "center",
+                borderWidth: 1,
+                borderColor: theme.border,
+                opacity: page <= 1 ? 0.6 : 1,
+              }}
+              onPress={() => setPage((prev) => Math.max(1, prev - 1))}
+            >
+              <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: theme.text }}>
+                Previous
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              disabled={page * pageSize >= total}
+              style={{
+                flex: 1,
+                backgroundColor: page * pageSize >= total ? theme.card : theme.surface,
+                borderRadius: 12,
+                paddingVertical: 10,
+                alignItems: "center",
+                borderWidth: 1,
+                borderColor: theme.border,
+                opacity: page * pageSize >= total ? 0.6 : 1,
+              }}
+              onPress={() => setPage((prev) => prev + 1)}
+            >
+              <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: theme.text }}>
+                Next
+              </Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         <TouchableOpacity
@@ -233,10 +504,20 @@ export default function AdminAuditLogsScreen() {
             alignItems: "center",
           }}
           onPress={() => {
-            const headers = ["Action", "Target Id", "Created At"];
+            const headers = [
+              "Action",
+              "User",
+              "Resource",
+              "Target Id",
+              "IP",
+              "Created At",
+            ];
             const rows = filteredLogs.map((log) => [
               log.action || "",
+              log.userName || log.userEmail || log.userId || "",
+              log.resource || "",
               log.targetId || "",
+              log.ipAddress || "",
               log.createdAt || "",
             ]);
             shareCsv({
@@ -270,10 +551,20 @@ export default function AdminAuditLogsScreen() {
             borderColor: theme.border,
           }}
           onPress={() => {
-            const headers = ["Action", "Target Id", "Created At"];
+            const headers = [
+              "Action",
+              "User",
+              "Resource",
+              "Target Id",
+              "IP",
+              "Created At",
+            ];
             const rows = filteredLogs.map((log) => [
               log.action || "",
+              log.userName || log.userEmail || log.userId || "",
+              log.resource || "",
               log.targetId || "",
+              log.ipAddress || "",
               log.createdAt || "",
             ]);
             emailCsv({

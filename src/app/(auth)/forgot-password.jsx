@@ -8,6 +8,7 @@ import { useMutation } from "@tanstack/react-query";
 import ScreenLayout from "@/components/ScreenLayout";
 import Input from "@/components/Input";
 import Button from "@/components/Button";
+import CaptchaChallenge from "@/components/CaptchaChallenge";
 import { useAppTheme } from "@/components/ThemeProvider";
 import apiClient from "@/utils/api";
 
@@ -18,9 +19,11 @@ export default function ForgotPasswordScreen() {
 
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaKey, setCaptchaKey] = useState(0);
 
   const forgotMutation = useMutation({
-    mutationFn: (value) => apiClient.forgotPassword(value),
+    mutationFn: ({ email, token }) => apiClient.forgotPassword(email, token),
     onSuccess: () => {
       Alert.alert(
         "Check your email",
@@ -32,6 +35,8 @@ export default function ForgotPasswordScreen() {
       );
     },
     onError: (err) => {
+      setCaptchaToken("");
+      setCaptchaKey((prev) => prev + 1);
       Alert.alert("Reset request failed", err.message || "Please try again.");
     },
   });
@@ -46,8 +51,12 @@ export default function ForgotPasswordScreen() {
       setError("Enter a valid email");
       return;
     }
+    if (!captchaToken) {
+      Alert.alert("Verification required", "Complete the security check to continue.");
+      return;
+    }
     setError("");
-    forgotMutation.mutate(normalized);
+    forgotMutation.mutate({ email: normalized, token: captchaToken });
   };
 
   return (
@@ -94,10 +103,17 @@ export default function ForgotPasswordScreen() {
             required
           />
 
+          <CaptchaChallenge
+            key={`forgot-captcha-${captchaKey}`}
+            onVerified={(token) => setCaptchaToken(token)}
+            helperText="Complete the security check to request a reset."
+          />
+
           <Button
             title="Send Reset OTP"
             onPress={onSubmit}
             loading={forgotMutation.isLoading}
+            disabled={!captchaToken}
             style={{ marginTop: 10 }}
           />
 

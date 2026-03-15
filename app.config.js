@@ -17,6 +17,7 @@ const androidPackage = isStaging
 const iosBundleIdentifier = isStaging
   ? `${base.ios.bundleIdentifier}.staging`
   : base.ios.bundleIdentifier;
+const sslPinningCerts = process.env.EXPO_PUBLIC_SSL_PINNING_CERTS || "";
 
 module.exports = {
   ...base,
@@ -37,9 +38,14 @@ module.exports = {
   },
   extra: {
     ...base.extra,
+    sslPinningCerts,
     eas: {
       ...(base?.extra?.eas || {}),
       projectId,
     },
   },
+  plugins: [
+    ...(base.plugins || []),
+    ["./plugins/withSslPins.js"],
+  ],
 };

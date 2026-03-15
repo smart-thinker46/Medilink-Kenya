@@ -8,6 +8,7 @@ import { useMutation } from "@tanstack/react-query";
 import ScreenLayout from "@/components/ScreenLayout";
 import Input from "@/components/Input";
 import Button from "@/components/Button";
+import CaptchaChallenge from "@/components/CaptchaChallenge";
 import { useAppTheme } from "@/components/ThemeProvider";
 import apiClient from "@/utils/api";
 
@@ -26,15 +27,20 @@ export default function ResetPasswordScreen() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaKey, setCaptchaKey] = useState(0);
 
   const resetMutation = useMutation({
-    mutationFn: ({ resetToken, newPassword }) => apiClient.resetPassword(resetToken, newPassword),
+    mutationFn: ({ resetToken, newPassword, captcha }) =>
+      apiClient.resetPassword(resetToken, newPassword, captcha),
     onSuccess: () => {
       Alert.alert("Password updated", "Your password has been reset successfully.", [
         { text: "Sign In", onPress: () => router.replace("/(auth)/login") },
       ]);
     },
     onError: (err) => {
+      setCaptchaToken("");
+      setCaptchaKey((prev) => prev + 1);
       Alert.alert("Reset failed", err.message || "Please try again.");
     },
   });
@@ -53,8 +59,12 @@ export default function ResetPasswordScreen() {
       setError("Passwords do not match");
       return;
     }
+    if (!captchaToken) {
+      Alert.alert("Verification required", "Complete the security check to continue.");
+      return;
+    }
     setError("");
-    resetMutation.mutate({ resetToken: normalizedToken, newPassword: password });
+    resetMutation.mutate({ resetToken: normalizedToken, newPassword: password, captcha: captchaToken });
   };
 
   return (
@@ -125,10 +135,17 @@ export default function ResetPasswordScreen() {
             required
           />
 
+          <CaptchaChallenge
+            key={`reset-captcha-${captchaKey}`}
+            onVerified={(value) => setCaptchaToken(value)}
+            helperText="Complete the security check to reset your password."
+          />
+
           <Button
             title="Reset Password"
             onPress={onSubmit}
             loading={resetMutation.isLoading}
+            disabled={!captchaToken}
             style={{ marginTop: 10 }}
           />
         </View>
@@ -136,4 +153,3 @@ export default function ResetPasswordScreen() {
     </ScreenLayout>
   );
 }
-

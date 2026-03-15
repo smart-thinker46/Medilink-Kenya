@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Toaster } from 'sonner-native';
 import { AlertModal } from './polyfills/web/alerts.web';
 import './global.css';
+import { useAppIntegrity } from './src/utils/security/useAppIntegrity';
 
 const GlobalErrorReporter = () => {
   useEffect(() => {
@@ -33,6 +34,7 @@ const GlobalErrorReporter = () => {
 };
 
 const Wrapper = memo(() => {
+  useAppIntegrity();
   return (
     <ErrorBoundaryWrapper>
       <SafeAreaProvider

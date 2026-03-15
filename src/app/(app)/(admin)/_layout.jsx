@@ -45,6 +45,7 @@ export default function AdminTabLayout() {
     { key: "control-center", title: "Control Center", href: "/(app)/(admin)/control-center", icon: ShieldAlert },
     { key: "settings", title: "Settings", href: "/(app)/(admin)/settings", icon: Settings },
     { key: "audit", title: "Audit Logs", href: "/(app)/(admin)/audit-logs", icon: FileText },
+    { key: "fraud-alerts", title: "Fraud Alerts", href: "/(app)/(admin)/fraud-alerts", icon: ShieldAlert },
     { key: "complaints", title: "Complaints", href: "/(app)/(admin)/complaints", icon: MessageCircle },
     { key: "history", title: "History", href: "/(app)/complaints-history", icon: History },
   ];
@@ -118,6 +119,7 @@ export default function AdminTabLayout() {
       <Tabs.Screen name="settings" options={{ href: null }} />
       <Tabs.Screen name="subscriptions" options={{ href: null }} />
       <Tabs.Screen name="audit-logs" options={{ href: null }} />
+      <Tabs.Screen name="fraud-alerts" options={{ href: null }} />
       <Tabs.Screen name="complaints" options={{ href: null }} />
       <Tabs.Screen name="chat" options={{ href: null }} />
       <Tabs.Screen name="email-center" options={{ href: null }} />
