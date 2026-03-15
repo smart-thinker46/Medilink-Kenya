@@ -9,12 +9,14 @@ import {
   Alert,
   Image,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Plus, Edit3, Trash2, Package, Store, Upload } from "lucide-react-native";
+import { MotiView } from "moti";
+import { ArrowLeft, Plus, Edit3, Trash2, Package, Store, Upload, Search } from "lucide-react-native";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import ProfileRequiredBanner from "@/components/ProfileRequiredBanner";
@@ -30,7 +32,7 @@ import { resolveMediaUrl } from "@/utils/media";
 export default function HospitalInventoryProductsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { theme, isDark } = useAppTheme();
+  const { theme } = useAppTheme();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const { auth } = useAuthStore();
@@ -49,6 +51,16 @@ export default function HospitalInventoryProductsScreen() {
   });
 
   const products = productsQuery.data || [];
+  const [query, setQuery] = useState("");
+  const filteredProducts = useMemo(() => {
+    if (!Array.isArray(products)) return [];
+    const q = String(query || "").trim().toLowerCase();
+    if (!q) return products;
+    return products.filter((p) => {
+      const lookup = `${p.name || p.productName || ""} ${p.category || ""} ${p.sku || ""} ${p.barcode || ""}`.toLowerCase();
+      return lookup.includes(q);
+    });
+  }, [products, query]);
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [formData, setFormData] = useState({
@@ -301,104 +313,165 @@ export default function HospitalInventoryProductsScreen() {
           />
         )}
 
+        <View style={{ paddingHorizontal: 24, marginBottom: 16 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: theme.surface,
+              borderRadius: 12,
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+              borderWidth: 1,
+              borderColor: theme.border,
+            }}
+          >
+            <Search color={theme.iconColor} size={16} />
+            <TextInput
+              style={{ flex: 1, color: theme.text, marginLeft: 10 }}
+              placeholder="Search products (name, category, SKU)"
+              placeholderTextColor={theme.textTertiary}
+              value={query}
+              onChangeText={setQuery}
+            />
+          </View>
+        </View>
+
         <FlatList
-          data={products}
+          data={filteredProducts}
           keyExtractor={(item, index) => item.id || `item-${index}`}
-          contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24 }}
-          renderItem={({ item }) => (
-            <View
+          contentContainerStyle={{
+            paddingHorizontal: 24,
+            paddingBottom: 24,
+            ...(Platform.OS === "web"
+              ? {
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  alignItems: "stretch",
+                  justifyContent: "flex-start",
+                  columnGap: 16,
+                  rowGap: 16,
+                }
+              : null),
+          }}
+          renderItem={({ item, index }) => (
+            <MotiView
+              from={{ opacity: 0, translateY: 10 }}
+              animate={{ opacity: 1, translateY: 0 }}
+              transition={{ type: "timing", duration: 500, delay: index * 60 }}
               style={{
-                backgroundColor: theme.card,
-                borderRadius: 16,
-                padding: 14,
-                marginBottom: 12,
-                borderWidth: 1,
-                borderColor: theme.border,
+                marginBottom: Platform.OS === "web" ? 0 : 12,
+                width: Platform.OS === "web" ? "25%" : "100%",
+                padding: Platform.OS === "web" ? 8 : 0,
+                flexBasis: Platform.OS === "web" ? "25%" : undefined,
+                minWidth: Platform.OS === "web" ? 220 : undefined,
+                maxWidth: Platform.OS === "web" ? 300 : "100%",
+                flexGrow: Platform.OS === "web" ? 1 : 0,
               }}
             >
-              {(item.imageUrl || item.image) ? (
+              <View
+                style={{
+                  backgroundColor: theme.card,
+                  borderRadius: 16,
+                  padding: 16,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  minHeight: Platform.OS === "web" ? 280 : undefined,
+                }}
+              >
                 <View
                   style={{
                     width: "100%",
-                    height: 120,
+                    height: Platform.OS === "web" ? 140 : 70,
                     borderRadius: 12,
-                    overflow: "hidden",
-                    marginBottom: 10,
                     backgroundColor: theme.surface,
+                    marginBottom: 12,
+                    overflow: "hidden",
+                    alignItems: "center",
+                    justifyContent: "center",
                   }}
                 >
-                  <Image
-                    source={{ uri: resolveMediaUrl(item.imageUrl || item.image || item.photoUrl) }}
-                    style={{ width: "100%", height: "100%" }}
-                    resizeMode="cover"
-                  />
+                  {item.imageUrl || item.image || item.photoUrl ? (
+                    <Image
+                      source={{ uri: resolveMediaUrl(item.imageUrl || item.image || item.photoUrl) }}
+                      style={{ width: "100%", height: "100%" }}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <Package color={theme.iconColor} size={20} />
+                  )}
                 </View>
-              ) : null}
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: 6,
-                }}
-              >
-                <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                  <Package color={theme.primary} size={16} />
+
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontFamily: "Inter_600SemiBold",
+                    color: theme.text,
+                  }}
+                  numberOfLines={2}
+                >
+                  {item.name || item.productName}
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: theme.textSecondary,
+                    marginTop: 4,
+                  }}
+                >
+                  Stock {Number(item.stock ?? item.numberInStock ?? item.quantity ?? 0)}
+                  {Boolean(item.prescriptionRequired ?? item.requiresPrescription ?? item.prescription)
+                    ? " • Prescription"
+                    : ""}
+                </Text>
+                <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+                  {item.category ? `Category: ${item.category}` : "Category: General"}
+                </Text>
+
+                <View style={{ flexDirection: "row", alignItems: "center", marginTop: 10, gap: 8 }}>
                   <Text
                     style={{
-                      marginLeft: 8,
-                      color: theme.text,
+                      fontSize: 14,
                       fontFamily: "Inter_600SemiBold",
-                      fontSize: 15,
+                      color: theme.text,
+                      flex: 1,
                     }}
                   >
-                    {item.name || item.productName}
+                    KES {Number(item.price || 0)}
                   </Text>
-                </View>
-                <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
-                  Stock: {item.stock ?? item.numberInStock ?? item.quantity ?? 0}
-                </Text>
-              </View>
-              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
-                Category: {item.category || "General"}
-              </Text>
-              <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>
-                Price: KES {Number(item.price || 0)}
-              </Text>
 
-              <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
-                <TouchableOpacity
-                  style={{
-                    flex: 1,
-                    borderRadius: 10,
-                    paddingVertical: 9,
-                    backgroundColor: theme.surface,
-                    alignItems: "center",
-                    flexDirection: "row",
-                    justifyContent: "center",
-                  }}
-                  onPress={() => openEdit(item)}
-                >
-                  <Edit3 color={theme.iconColor} size={15} />
-                  <Text style={{ marginLeft: 6, color: theme.textSecondary }}>Edit</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{
-                    flex: 1,
-                    borderRadius: 10,
-                    paddingVertical: 9,
-                    backgroundColor: "#FEF2F2",
-                    alignItems: "center",
-                    flexDirection: "row",
-                    justifyContent: "center",
-                  }}
-                  onPress={() => deleteProduct(item.id)}
-                >
-                  <Trash2 color="#DC2626" size={15} />
-                  <Text style={{ marginLeft: 6, color: "#DC2626" }}>Delete</Text>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 10,
+                      backgroundColor: theme.primary,
+                    }}
+                    onPress={() => openEdit(item)}
+                  >
+                    <Text style={{ color: "#FFFFFF", fontSize: 12, fontFamily: "Inter_600SemiBold" }}>
+                      Edit
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 10,
+                      backgroundColor: `${theme.error}15`,
+                      borderWidth: 1,
+                      borderColor: `${theme.error}40`,
+                    }}
+                    onPress={() => deleteProduct(item.id)}
+                  >
+                    <Text style={{ color: theme.error, fontSize: 12, fontFamily: "Inter_600SemiBold" }}>
+                      Delete
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
+            </MotiView>
           )}
           ListEmptyComponent={() => (
             <View

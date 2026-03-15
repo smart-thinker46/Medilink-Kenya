@@ -1,7 +1,61 @@
 import { create } from "zustand";
+import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 
 export const authKey = `medilink-kenya-jwt`;
+
+// Session-only auth:
+// - Web: sessionStorage (clears when tab/window closes).
+// - Native: in-memory only (clears when app process restarts).
+const AUTH_SESSION_MODE =
+  String(process.env.EXPO_PUBLIC_AUTH_SESSION_MODE || "session").toLowerCase() === "persist"
+    ? "persist"
+    : "session";
+
+const canUseSessionStorage = () => {
+  if (Platform.OS !== "web") return false;
+  try {
+    return typeof window !== "undefined" && Boolean(window.sessionStorage);
+  } catch {
+    return false;
+  }
+};
+
+const writeAuth = async (value) => {
+  if (AUTH_SESSION_MODE === "session") {
+    if (canUseSessionStorage()) {
+      window.sessionStorage.setItem(authKey, value);
+    }
+    return;
+  }
+  await SecureStore.setItemAsync(authKey, value);
+};
+
+const readAuth = async () => {
+  if (AUTH_SESSION_MODE === "session") {
+    if (canUseSessionStorage()) {
+      return window.sessionStorage.getItem(authKey);
+    }
+    // Native session mode does not persist auth.
+    return null;
+  }
+  return SecureStore.getItemAsync(authKey);
+};
+
+const clearAuth = async () => {
+  if (canUseSessionStorage()) {
+    try {
+      window.sessionStorage.removeItem(authKey);
+    } catch {
+      // ignore
+    }
+  }
+  try {
+    await SecureStore.deleteItemAsync(authKey);
+  } catch {
+    // ignore (SecureStore may be unavailable on some web setups)
+  }
+};
 
 export const normalizeAuth = (auth) => {
   if (!auth || typeof auth !== "object") return null;
@@ -25,15 +79,15 @@ export const useAuthStore = create((set, get) => ({
   setAuth: async (auth) => {
     const normalized = normalizeAuth(auth);
     if (normalized) {
-      await SecureStore.setItemAsync(authKey, JSON.stringify(normalized));
+      await writeAuth(JSON.stringify(normalized));
     } else {
-      await SecureStore.deleteItemAsync(authKey);
+      await clearAuth();
     }
     set({ auth: normalized, isReady: true });
   },
   loadAuth: async () => {
     try {
-      const authData = await SecureStore.getItemAsync(authKey);
+      const authData = await readAuth();
       if (authData) {
         const parsedAuth = normalizeAuth(JSON.parse(authData));
         set({ auth: parsedAuth, isReady: true });
@@ -46,7 +100,7 @@ export const useAuthStore = create((set, get) => ({
     }
   },
   logout: async () => {
-    await SecureStore.deleteItemAsync(authKey);
+    await clearAuth();
     set({ auth: null });
   },
 }));

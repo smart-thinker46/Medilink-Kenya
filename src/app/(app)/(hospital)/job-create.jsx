@@ -34,24 +34,35 @@ export default function HospitalJobCreateScreen() {
       : [...values, entry];
   };
 
+  const jobCategoryOptions = useMemo(
+    () => ["Doctor", "Nurse", "Pharmacist", "Lab Technician", "Receptionist", "Others"],
+    [],
+  );
+  const educationLevelOptions = useMemo(
+    () => ["Certificate", "Diploma", "Degree", "Masters", "PhD", "Others"],
+    [],
+  );
+
   const [formData, setFormData] = useState({
     title: "",
     jobCategory: "Doctor",
+    jobCategoryOther: "",
     description: "",
     responsibilities: "",
     requiredMedics: "",
     requirements: "",
     educationLevel: "Degree",
+    educationLevelOther: "",
     licenseBody: "",
     experienceYears: "",
     employmentType: "full_time",
+    contractPeriod: "",
     workSchedule: "day",
     department: "",
     specialization: "",
     facilityType: "Hospital",
     county: "",
     city: "",
-    address: "",
     contactEmail: "",
     contactPhone: "",
     applicationDeadline: "",
@@ -60,13 +71,10 @@ export default function HospitalJobCreateScreen() {
     maxApplicants: "",
     requiredDocuments: ["CV"],
     payType: "monthly",
-    salaryMin: "",
-    salaryMax: "",
     payAmount: "",
     hours: "",
     qualifications: "",
     benefits: "",
-    shiftPattern: "Long-term",
     startDate: "",
     drugDispensingExperience: "",
     inventoryManagementExperience: "",
@@ -85,25 +93,41 @@ export default function HospitalJobCreateScreen() {
     const job = jobs.find((item) => item.id === editJobId);
     if (!job) return;
 
+    const rawJobCategory = String(job.jobCategory || job.category || "Doctor").trim();
+    const rawEducation = String(job.educationLevel || "Degree").trim();
+
+    const jobCategoryKnown = jobCategoryOptions.includes(rawJobCategory);
+    const educationKnown = educationLevelOptions.includes(rawEducation);
+
+    const nextJobCategory = jobCategoryKnown ? rawJobCategory : "Others";
+    const nextJobCategoryOther = jobCategoryKnown ? "" : rawJobCategory;
+
+    const nextEducationLevel = educationKnown ? rawEducation : "Others";
+    const nextEducationOther = educationKnown ? "" : rawEducation;
+
     setFormData((prev) => ({
       ...prev,
       title: job.title || "",
-      jobCategory: job.jobCategory || job.category || "Doctor",
+      jobCategory: nextJobCategory,
+      jobCategoryOther: nextJobCategoryOther,
       description: job.description || "",
       responsibilities: job.responsibilities || "",
       requiredMedics: String(job.requiredMedics || ""),
       requirements: job.requirements || "",
-      educationLevel: job.educationLevel || "Degree",
+      educationLevel: nextEducationLevel,
+      educationLevelOther: nextEducationOther,
       licenseBody: job.licenseBody || "",
       experienceYears: String(job.experienceYears || ""),
       employmentType: job.jobType || "full_time",
+      contractPeriod: String(
+        String(job.jobType || "").toLowerCase() === "contract" ? (job.shiftPattern || "") : "",
+      ),
       workSchedule: job.scheduleType || "day",
       department: job.department || "",
       specialization: job.specialization || "",
       facilityType: job.facilityType || "Hospital",
       county: job.county || "",
       city: job.city || "",
-      address: job.address || "",
       contactEmail: job.contactEmail || "",
       contactPhone: job.contactPhone || "",
       applicationDeadline: job.applicationDeadline || "",
@@ -112,19 +136,16 @@ export default function HospitalJobCreateScreen() {
       maxApplicants: String(job.maxApplicants || ""),
       requiredDocuments: job.requiredDocuments || ["CV"],
       payType: job.payType || "monthly",
-      salaryMin: String(job.payMin || ""),
-      salaryMax: String(job.payMax || ""),
       payAmount: String(job.payAmount || ""),
       hours: String(job.hours || ""),
       qualifications: job.qualifications || "",
       benefits: job.benefits || "",
-      shiftPattern: job.shiftPattern || "Long-term",
       startDate: job.startDate || "",
       drugDispensingExperience: job.drugDispensingExperience || "",
       inventoryManagementExperience: job.inventoryManagementExperience || "",
       pharmacySoftwareExperience: job.pharmacySoftwareExperience || "",
     }));
-  }, [editJobId, jobsQuery.data]);
+  }, [editJobId, jobsQuery.data, educationLevelOptions, jobCategoryOptions]);
 
   const saveMutation = useMutation({
     mutationFn: (payload) =>
@@ -150,9 +171,21 @@ export default function HospitalJobCreateScreen() {
       return;
     }
 
+    const resolvedJobCategory =
+      formData.jobCategory === "Others"
+        ? String(formData.jobCategoryOther || "").trim()
+        : String(formData.jobCategory || "").trim();
+    const resolvedEducationLevel =
+      formData.educationLevel === "Others"
+        ? String(formData.educationLevelOther || "").trim()
+        : String(formData.educationLevel || "").trim();
+    const contractPeriod = String(formData.contractPeriod || "").trim();
+
     const missingFields = [];
     if (!String(formData.title || "").trim()) missingFields.push("Job title");
-    if (!String(formData.jobCategory || "").trim()) missingFields.push("Job category");
+    if (!resolvedJobCategory) {
+      missingFields.push(formData.jobCategory === "Others" ? "Job category (Other)" : "Job category");
+    }
     if (!String(formData.department || "").trim()) missingFields.push("Department");
     if (!String(formData.facilityType || "").trim()) missingFields.push("Facility type");
     if (!String(formData.county || "").trim()) missingFields.push("County");
@@ -160,25 +193,38 @@ export default function HospitalJobCreateScreen() {
     if (!String(formData.description || "").trim()) missingFields.push("Job description");
     if (!String(formData.responsibilities || "").trim()) missingFields.push("Roles and responsibilities");
     if (!String(formData.requirements || "").trim()) missingFields.push("Requirements");
-    if (!String(formData.educationLevel || "").trim()) missingFields.push("Education level");
+    if (!resolvedEducationLevel) {
+      missingFields.push(formData.educationLevel === "Others" ? "Education level (Other)" : "Education level");
+    }
     if (!String(formData.employmentType || "").trim()) missingFields.push("Employment type");
     if (!String(formData.workSchedule || "").trim()) missingFields.push("Work schedule");
     if (!String(formData.applicationDeadline || "").trim()) missingFields.push("Application deadline");
     if (!String(formData.applicationMethod || "").trim()) missingFields.push("Application method");
     if ((Number(formData.requiredMedics) || 0) <= 0) missingFields.push("Available slots");
+    if (String(formData.employmentType || "").toLowerCase() === "contract" && !contractPeriod) {
+      missingFields.push("Contract period");
+    }
 
     if (missingFields.length) {
       showToast(`Please complete: ${missingFields.join(", ")}`, "warning");
       return;
     }
 
+    const locationText = [String(formData.city || "").trim(), String(formData.county || "").trim()]
+      .filter(Boolean)
+      .join(", ");
+    const computedShiftPattern =
+      String(formData.employmentType || "").toLowerCase() === "contract"
+        ? contractPeriod
+        : "Long-term";
+
     saveMutation.mutate({
       title: formData.title,
-      jobCategory: formData.jobCategory,
+      jobCategory: resolvedJobCategory,
       description: formData.description,
       responsibilities: formData.responsibilities,
       requirements: formData.requirements,
-      educationLevel: formData.educationLevel,
+      educationLevel: resolvedEducationLevel,
       licenseBody: formData.licenseBody,
       experienceYears: Number(formData.experienceYears) || 0,
       employmentType: formData.employmentType,
@@ -188,7 +234,6 @@ export default function HospitalJobCreateScreen() {
       facilityType: formData.facilityType,
       county: formData.county,
       city: formData.city,
-      address: formData.address,
       contactEmail: formData.contactEmail,
       contactPhone: formData.contactPhone,
       applicationDeadline: formData.applicationDeadline,
@@ -202,13 +247,16 @@ export default function HospitalJobCreateScreen() {
       requiredMedics: Number(formData.requiredMedics) || 0,
       payType: formData.payType,
       payAmount: Number(formData.payAmount) || 0,
-      salaryMin: Number(formData.salaryMin) || 0,
-      salaryMax: Number(formData.salaryMax) || 0,
-      location: formData.address || formData.city || formData.county,
+      // Salary ranges are intentionally cleared since the UI no longer supports them.
+      salaryMin: 0,
+      salaryMax: 0,
+      location: locationText,
       hours: Number(formData.hours) || 0,
       qualifications: formData.qualifications,
       benefits: formData.benefits,
-      shiftPattern: formData.shiftPattern,
+      // We reuse the existing "shiftPattern" field to persist contract period for contract jobs.
+      // It is not shown as "Shift Pattern" in the jobs UI.
+      shiftPattern: computedShiftPattern,
       startDate: formData.startDate,
     });
   };
@@ -268,7 +316,7 @@ export default function HospitalJobCreateScreen() {
             Job Category
           </Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-            {["Doctor", "Nurse", "Pharmacist", "Lab Technician", "Receptionist"].map((option) => {
+            {jobCategoryOptions.map((option) => {
               const active = formData.jobCategory === option;
               return (
                 <TouchableOpacity
@@ -281,7 +329,12 @@ export default function HospitalJobCreateScreen() {
                     borderColor: active ? theme.primary : theme.border,
                     backgroundColor: active ? `${theme.primary}15` : theme.surface,
                   }}
-                  onPress={() => setFormData((prev) => ({ ...prev, jobCategory: option }))}
+                  onPress={() =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      jobCategory: option,
+                    }))
+                  }
                 >
                   <Text style={{ fontSize: 12, color: active ? theme.primary : theme.textSecondary }}>
                     {option}
@@ -290,6 +343,16 @@ export default function HospitalJobCreateScreen() {
               );
             })}
           </View>
+
+          {formData.jobCategory === "Others" && (
+            <Input
+              label="Specify Category"
+              placeholder="e.g. Lab Assistant, Community Health"
+              value={formData.jobCategoryOther}
+              onChangeText={(value) => setFormData((prev) => ({ ...prev, jobCategoryOther: value }))}
+              required
+            />
+          )}
 
           <Input
             label="Department"
@@ -353,18 +416,11 @@ export default function HospitalJobCreateScreen() {
             required
           />
 
-          <Input
-            label="Address"
-            placeholder="Street or landmark"
-            value={formData.address}
-            onChangeText={(value) => setFormData((prev) => ({ ...prev, address: value }))}
-          />
-
           <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: theme.text, marginBottom: 8 }}>
             Job Description
           </Text>
           <Input
-            label="Job Description"
+            label="Description"
             placeholder="Describe duties and expectations"
             value={formData.description}
             onChangeText={(value) => setFormData((prev) => ({ ...prev, description: value }))}
@@ -390,7 +446,7 @@ export default function HospitalJobCreateScreen() {
             Education Level
           </Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-            {["Diploma", "Degree", "Masters", "PhD"].map((option) => {
+            {educationLevelOptions.map((option) => {
               const active = formData.educationLevel === option;
               return (
                 <TouchableOpacity
@@ -403,7 +459,12 @@ export default function HospitalJobCreateScreen() {
                     borderColor: active ? theme.primary : theme.border,
                     backgroundColor: active ? `${theme.primary}15` : theme.surface,
                   }}
-                  onPress={() => setFormData((prev) => ({ ...prev, educationLevel: option }))}
+                  onPress={() =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      educationLevel: option,
+                    }))
+                  }
                 >
                   <Text style={{ fontSize: 12, color: active ? theme.primary : theme.textSecondary }}>
                     {option}
@@ -412,6 +473,16 @@ export default function HospitalJobCreateScreen() {
               );
             })}
           </View>
+
+          {formData.educationLevel === "Others" && (
+            <Input
+              label="Specify Education Level"
+              placeholder="e.g. Higher Diploma, Fellowship"
+              value={formData.educationLevelOther}
+              onChangeText={(value) => setFormData((prev) => ({ ...prev, educationLevelOther: value }))}
+              required
+            />
+          )}
 
           <Input
             label="Professional License Body"
@@ -451,7 +522,7 @@ export default function HospitalJobCreateScreen() {
             Job Type
           </Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-            {["full_time", "part_time", "contract", "internship"].map((option) => {
+            {["full_time", "part_time", "contract", "internship", "attachment"].map((option) => {
               const active = formData.employmentType === option;
               return (
                 <TouchableOpacity
@@ -464,7 +535,12 @@ export default function HospitalJobCreateScreen() {
                     borderColor: active ? theme.primary : theme.border,
                     backgroundColor: active ? `${theme.primary}15` : theme.surface,
                   }}
-                  onPress={() => setFormData((prev) => ({ ...prev, employmentType: option }))}
+                  onPress={() =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      employmentType: option,
+                    }))
+                  }
                 >
                   <Text style={{ fontSize: 12, color: active ? theme.primary : theme.textSecondary }}>
                     {option.replace("_", " ")}
@@ -473,6 +549,16 @@ export default function HospitalJobCreateScreen() {
               );
             })}
           </View>
+
+          {String(formData.employmentType || "").toLowerCase() === "contract" && (
+            <Input
+              label="Contract Period"
+              placeholder="e.g. 6 months / 1 year"
+              value={formData.contractPeriod}
+              onChangeText={(value) => setFormData((prev) => ({ ...prev, contractPeriod: value }))}
+              required
+            />
+          )}
 
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
             {["day", "night", "rotational"].map((option) => {
@@ -497,13 +583,6 @@ export default function HospitalJobCreateScreen() {
               );
             })}
           </View>
-
-          <Input
-            label="Shift Pattern (Optional)"
-            placeholder="e.g. Rotational shift"
-            value={formData.shiftPattern}
-            onChangeText={(value) => setFormData((prev) => ({ ...prev, shiftPattern: value }))}
-          />
 
           <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: theme.text, marginBottom: 8 }}>
             Salary Information
@@ -530,27 +609,6 @@ export default function HospitalJobCreateScreen() {
                 </TouchableOpacity>
               );
             })}
-          </View>
-
-          <View style={{ flexDirection: "row", gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Input
-                label="Min Salary (KES)"
-                placeholder="e.g. 80000"
-                value={formData.salaryMin}
-                onChangeText={(value) => setFormData((prev) => ({ ...prev, salaryMin: value }))}
-                keyboardType="numeric"
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Input
-                label="Max Salary (KES)"
-                placeholder="e.g. 120000"
-                value={formData.salaryMax}
-                onChangeText={(value) => setFormData((prev) => ({ ...prev, salaryMax: value }))}
-                keyboardType="numeric"
-              />
-            </View>
           </View>
 
           <Input

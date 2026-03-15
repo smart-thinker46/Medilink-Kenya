@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ThemeProvider from "@/components/ThemeProvider";
 import ToastProvider from "@/components/ToastProvider";
 import { useAppFonts } from "@/utils/useFontLoader";
+import { useAppSettingsStore } from "@/utils/appSettings/store";
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -27,6 +28,8 @@ export default function RootLayout() {
   const fontsLoaded = useAppFonts();
   const [pushApi, setPushApi] = useState(null);
   const [bootTimeoutReached, setBootTimeoutReached] = useState(false);
+  const setContact = useAppSettingsStore((s) => s.setContact);
+  const setLastSyncedAt = useAppSettingsStore((s) => s.setLastSyncedAt);
 
   const appReady = (isReady && fontsLoaded) || bootTimeoutReached;
 
@@ -83,6 +86,30 @@ export default function RootLayout() {
       pushApi?.registerDeviceToken?.().catch(() => undefined);
     }
   }, [auth?.token, pushApi]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const api = (await import("../utils/api")).default;
+        const res = await api.getAppContactInfo();
+        if (cancelled) return;
+        const contact = res?.contact || res?.data?.contact || null;
+        const updatedAt = res?.updatedAt || res?.data?.updatedAt || null;
+        if (contact && typeof contact === "object") {
+          setContact(contact);
+        }
+        if (updatedAt) {
+          setLastSyncedAt(String(updatedAt));
+        }
+      } catch {
+        // ignore (app can fall back to defaults)
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [setContact, setLastSyncedAt]);
 
   useEffect(() => {
     if (!auth?.token) return;

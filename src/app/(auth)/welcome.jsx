@@ -27,6 +27,7 @@ import {
 
 import { useAppTheme } from "@/components/ThemeProvider";
 import { useI18n } from "@/utils/i18n";
+import { useAppSettingsStore } from "@/utils/appSettings/store";
 
 const { width: screenWidth } = Dimensions.get("window");
 const MotiView =
@@ -43,6 +44,7 @@ export default function WelcomeScreen() {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useAppTheme();
   const { t, language, setLanguage } = useI18n();
+  const contact = useAppSettingsStore((s) => s.contact);
   const isLight = !isDark;
   const ui = {
     backgroundGradient: isLight
@@ -59,15 +61,7 @@ export default function WelcomeScreen() {
       : ["rgba(8,15,28,0.08)", "rgba(2,6,23,0.9)"],
   };
   const kenyaGlow = ["#0B7A3D", "#0B7A3D", "#FFFFFF", "#C8102E", "#000000", "#FFFFFF", "#0B7A3D"];
-  const kenyaGlowDark = [
-    "rgba(11,122,61,0.65)",
-    "rgba(11,122,61,0.45)",
-    "rgba(255,255,255,0.22)",
-    "rgba(200,16,46,0.5)",
-    "rgba(0,0,0,0.0)",
-    "rgba(255,255,255,0.18)",
-    "rgba(11,122,61,0.45)",
-  ];
+  const kenyaGlowDark = ["#0B7A3D", "#FFFFFF", "#C8102E", "#000000", "#FFFFFF", "#0B7A3D"];
   const shellRadius = 22;
   const [actionsHidden, setActionsHidden] = useState(false);
   const actionsAnim = useRef(new Animated.Value(0)).current;
@@ -140,7 +134,7 @@ export default function WelcomeScreen() {
         colors={isLight ? kenyaGlow : kenyaGlowDark}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={{ flex: 1, padding: isLight ? 3 : 2 }}
+        style={{ flex: 1, padding: isLight ? 3 : 3 }}
       >
         <View
           style={{
@@ -148,10 +142,12 @@ export default function WelcomeScreen() {
             borderRadius: shellRadius,
             overflow: "hidden",
             backgroundColor: ui.background,
+            borderWidth: 1,
+            borderColor: isLight ? "transparent" : "rgba(255,255,255,0.08)",
             shadowColor: isLight ? "#0B7A3D" : "#C8102E",
             shadowOffset: { width: 0, height: 10 },
-            shadowOpacity: isLight ? 0.18 : 0.12,
-            shadowRadius: isLight ? 18 : 14,
+            shadowOpacity: isLight ? 0.18 : 0.22,
+            shadowRadius: isLight ? 18 : 16,
             elevation: isLight ? 8 : 6,
           }}
         >
@@ -497,7 +493,9 @@ export default function WelcomeScreen() {
                   Need help? Contact Medilink Kenya
                 </Text>
                 <Text style={{ fontSize: 12, color: theme.textSecondary, textAlign: "center", marginTop: 4 }}>
-                  support@medilink.co.ke • +254 700 000 000
+                  {(contact?.email || "support@medilink.co.ke") +
+                    " \u2022 " +
+                    (contact?.phone || "+254 700 000 000")}
                 </Text>
               </View>
             </ScrollView>

@@ -13,6 +13,7 @@ import { getFirstName } from "@/utils/greeting";
 import { resolveMediaUrl } from "@/utils/media";
 import { previewReceipt } from "@/utils/receiptExport";
 import { useToast } from "@/components/ToastProvider";
+import { usePatientProfile } from "@/utils/usePatientProfile";
 
 function Section({ title, children, theme }) {
   return (
@@ -49,7 +50,8 @@ export default function PatientHealthHubScreen() {
   const queryClient = useQueryClient();
   const { auth } = useAuthStore();
   const { showToast } = useToast();
-  const firstName = getFirstName(auth?.user, "Patient");
+  const { profile } = usePatientProfile();
+  const firstName = getFirstName({ ...(auth?.user || {}), ...(profile || {}) }, "Patient");
   const patientId = auth?.user?.id;
 
   const [medicationCheckInput, setMedicationCheckInput] = useState("");

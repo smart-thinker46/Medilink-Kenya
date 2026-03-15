@@ -67,7 +67,7 @@ export default function MedicHomeScreen() {
   } = useMedicScope();
   const firstName = isSuperAdmin
     ? getFirstName(selectedMedic, "Medic")
-    : getFirstName(auth?.user, "Medic");
+    : getFirstName(avatarUser, "Medic");
   const timeGreeting = getTimeGreeting();
 
   const completion = useMemo(

@@ -92,15 +92,28 @@ export default function HospitalJobsScreen() {
     },
   });
 
+  const hireApplicationMutation = useMutation({
+    mutationFn: ({ jobId, medicId }) => apiClient.hireJobApplication(jobId, medicId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["jobs", "hospital"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs", "shared"] });
+      queryClient.invalidateQueries({ queryKey: ["medics", "hired"] });
+      showToast("Medic hired.", "success");
+    },
+    onError: (error) => {
+      showToast(error?.message || "Hire failed.", "error");
+    },
+  });
+
   const rejectApplicationMutation = useMutation({
     mutationFn: ({ jobId, medicId }) => apiClient.rejectJobApplication(jobId, medicId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs", "hospital"] });
       queryClient.invalidateQueries({ queryKey: ["jobs", "shared"] });
-      showToast("Application rejected.", "success");
+      showToast("Application denied.", "success");
     },
     onError: (error) => {
-      showToast(error?.message || "Reject failed.", "error");
+      showToast(error?.message || "Deny failed.", "error");
     },
   });
 
@@ -306,11 +319,51 @@ export default function HospitalJobsScreen() {
             const appliedCount = Array.isArray(item?.applications) ? item.applications.length : 0;
             const applications = Array.isArray(item?.applications) ? item.applications : [];
             const approvedCount = applications.filter(
-              (app) => String(app?.status || "").toUpperCase() === "APPROVED",
+              (app) => ["APPROVED", "HIRED"].includes(String(app?.status || "").toUpperCase()),
             ).length;
             const requiredSlots = Number(item?.requiredMedics || 0);
             const isExpanded = expandedJobId === item.id;
             const details = item?.jobDetails || parseJobDetails(item?.specifications);
+            const jobTypeText = String(item.jobType || details.jobType || "N/A").split("_").join(" ");
+            const isContract =
+              String(item.jobType || details.jobType || "").toLowerCase() === "contract";
+            const contractPeriod = String(item.shiftPattern || details.shiftPattern || "").trim();
+            const jobTypeKey = String(item.jobType || details.jobType || "").toLowerCase();
+            const jobTypeTone =
+              jobTypeKey === "full_time"
+                ? theme.success
+                : jobTypeKey === "part_time"
+                  ? theme.info
+                  : jobTypeKey === "contract"
+                    ? theme.warning
+                    : jobTypeKey === "internship"
+                      ? theme.accent
+                      : jobTypeKey === "attachment"
+                        ? theme.primary
+                        : theme.primary;
+            const slotsTone =
+              requiredSlots > 0 && approvedCount >= requiredSlots
+                ? theme.success
+                : approvedCount > 0
+                  ? theme.info
+                  : theme.warning;
+            const applicantPreviewNames = applications
+              .slice(0, 3)
+              .map((app, idx) => {
+                const raw =
+                  app?.medicName ||
+                  app?.medicEmail ||
+                  app?.fullName ||
+                  app?.email ||
+                  app?.medicId ||
+                  `Medic ${idx + 1}`;
+                return String(raw || "").trim();
+              })
+              .filter(Boolean);
+            const remainingApplicants = Math.max(0, appliedCount - applicantPreviewNames.length);
+            const applicantPreviewText = applicantPreviewNames.length
+              ? `${applicantPreviewNames.join(", ")}${remainingApplicants ? ` +${remainingApplicants}` : ""}`
+              : "No applicants yet";
             return (
               <MotiView
                 from={{ opacity: 0, translateY: 10 }}
@@ -372,6 +425,66 @@ export default function HospitalJobsScreen() {
                     {isExpanded ? "Tap title to collapse details" : "Tap title to view full details"}
                   </Text>
 
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                    <View
+                      style={{
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        borderRadius: 999,
+                        borderWidth: 1,
+                        borderColor: `${jobTypeTone}55`,
+                        backgroundColor: `${jobTypeTone}15`,
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, color: jobTypeTone, fontFamily: "Inter_600SemiBold" }}>
+                        Type: {jobTypeText}
+                      </Text>
+                    </View>
+                    {isContract && contractPeriod ? (
+                      <View
+                        style={{
+                          paddingHorizontal: 10,
+                          paddingVertical: 6,
+                          borderRadius: 999,
+                          borderWidth: 1,
+                          borderColor: `${theme.warning}55`,
+                          backgroundColor: `${theme.warning}15`,
+                        }}
+                      >
+                        <Text style={{ fontSize: 11, color: theme.warning }}>
+                          Contract: {contractPeriod}
+                        </Text>
+                      </View>
+                    ) : null}
+                    <View
+                      style={{
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        borderRadius: 999,
+                        borderWidth: 1,
+                        borderColor: `${slotsTone}55`,
+                        backgroundColor: `${slotsTone}15`,
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, color: slotsTone, fontFamily: "Inter_600SemiBold" }}>
+                        Slots: {approvedCount}/{requiredSlots || "?"} approved
+                      </Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    onPress={() => setExpandedJobId((prev) => (prev === item.id ? null : item.id))}
+                    activeOpacity={0.8}
+                    style={{ marginTop: 10 }}
+                  >
+                    <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                      Applicants:{" "}
+                      <Text style={{ color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                        {applicantPreviewText}
+                      </Text>
+                    </Text>
+                  </TouchableOpacity>
+
                   {isExpanded && (
                     <>
                       <Text style={{ fontSize: 13, color: theme.textSecondary, marginTop: 8 }}>
@@ -388,14 +501,20 @@ export default function HospitalJobsScreen() {
                           Facility: {item.facilityType || details.facilityType || "N/A"}
                         </Text>
                         <Text style={{ fontSize: 12, color: theme.textSecondary }}>
-                          Location: {[item.county, item.city, item.address].filter(Boolean).join(", ") || item.location || "N/A"}
+                          Location: {[item.county, item.city].filter(Boolean).join(", ") || item.location || "N/A"}
                         </Text>
                         <Text style={{ fontSize: 12, color: theme.textSecondary }}>
-                          Job Type: {item.jobType || details.jobType || "N/A"}
+                          Job Type: {String(item.jobType || details.jobType || "N/A").split("_").join(" ")}
                         </Text>
                         <Text style={{ fontSize: 12, color: theme.textSecondary }}>
-                          Schedule: {item.scheduleType || details.scheduleType || "N/A"} {(item.shiftPattern || details.shiftPattern) ? `(${item.shiftPattern || details.shiftPattern})` : ""}
+                          Schedule: {item.scheduleType || details.scheduleType || "N/A"}
                         </Text>
+                        {(String(item.jobType || details.jobType || "").toLowerCase() === "contract" &&
+                          (item.shiftPattern || details.shiftPattern)) ? (
+                          <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                            Contract Period: {item.shiftPattern || details.shiftPattern}
+                          </Text>
+                        ) : null}
                         <Text style={{ fontSize: 12, color: theme.textSecondary }}>
                           Experience: {item.experienceLevel || details.experienceLevel || "N/A"}
                         </Text>
@@ -418,7 +537,15 @@ export default function HospitalJobsScreen() {
                           Benefits: {item.benefits || details.benefits || "N/A"}
                         </Text>
                         <Text style={{ fontSize: 12, color: theme.textSecondary }}>
-                          Salary: {item.payMin || item.salaryMin || ""}{item.payMax || item.salaryMax ? ` - ${item.payMax || item.salaryMax}` : ""} {item.payType || item.salaryType || ""}
+                          Salary: {(() => {
+                            const amount = Number(item.payAmount || details.payAmount || 0);
+                            const payType = String(item.payType || item.salaryType || "").trim();
+                            const payTypeLower = payType.toLowerCase();
+                            if (Number.isFinite(amount) && amount > 0) return `KES ${amount}${payType ? ` ${payType}` : ""}`;
+                            if (payTypeLower === "negotiable") return "Negotiable";
+                            if (payType) return payType;
+                            return "Not specified";
+                          })()}
                         </Text>
                         <Text style={{ fontSize: 12, color: theme.textSecondary }}>
                           Application Method: {item.applicationMethod || details.applicationMethod || "N/A"}
@@ -460,26 +587,145 @@ export default function HospitalJobsScreen() {
                                   <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 2 }}>
                                     Status: {status}
                                   </Text>
+                                  {status === "HIRED" && (
+                                    <View
+                                      style={{
+                                        marginTop: 8,
+                                        alignSelf: "flex-start",
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 6,
+                                        borderRadius: 999,
+                                        backgroundColor: `${theme.success}15`,
+                                        borderWidth: 1,
+                                        borderColor: `${theme.success}40`,
+                                      }}
+                                    >
+                                      <Text
+                                        style={{
+                                          fontSize: 12,
+                                          color: theme.success,
+                                          fontFamily: "Inter_600SemiBold",
+                                        }}
+                                      >
+                                        HIRED
+                                      </Text>
+                                    </View>
+                                  )}
                                   {status === "PENDING" && (
-                                    <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                                    <View style={{ marginTop: 8, gap: 8 }}>
+                                      <View style={{ flexDirection: "row", gap: 8 }}>
+                                        <TouchableOpacity
+                                          style={{
+                                            flex: 1,
+                                            backgroundColor: `${theme.success}15`,
+                                            borderRadius: 8,
+                                            paddingVertical: 8,
+                                            alignItems: "center",
+                                            borderWidth: 1,
+                                            borderColor: `${theme.success}40`,
+                                          }}
+                                          onPress={() =>
+                                            approveApplicationMutation.mutate({
+                                              jobId: item.id,
+                                              medicId: app.medicId,
+                                            })
+                                          }
+                                        >
+                                          <Text style={{ fontSize: 12, color: theme.success }}>Approve</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                          style={{
+                                            flex: 1,
+                                            backgroundColor: `${theme.error}15`,
+                                            borderRadius: 8,
+                                            paddingVertical: 8,
+                                            alignItems: "center",
+                                            borderWidth: 1,
+                                            borderColor: `${theme.error}40`,
+                                          }}
+                                          onPress={() =>
+                                            rejectApplicationMutation.mutate({
+                                              jobId: item.id,
+                                              medicId: app.medicId,
+                                            })
+                                          }
+                                        >
+                                          <Text style={{ fontSize: 12, color: theme.error }}>Deny</Text>
+                                        </TouchableOpacity>
+                                      </View>
                                       <TouchableOpacity
                                         style={{
-                                          flex: 1,
-                                          backgroundColor: `${theme.success}15`,
+                                          backgroundColor: `${theme.primary}15`,
                                           borderRadius: 8,
                                           paddingVertical: 8,
                                           alignItems: "center",
                                           borderWidth: 1,
-                                          borderColor: `${theme.success}40`,
+                                          borderColor: `${theme.primary}40`,
                                         }}
                                         onPress={() =>
-                                          approveApplicationMutation.mutate({
-                                            jobId: item.id,
-                                            medicId: app.medicId,
-                                          })
+                                          Alert.alert(
+                                            "Hire medic",
+                                            "This will mark the medic as HIRED and add them to your hired list.",
+                                            [
+                                              { text: "Cancel", style: "cancel" },
+                                              {
+                                                text: "Hire",
+                                                onPress: () =>
+                                                  hireApplicationMutation.mutate({
+                                                    jobId: item.id,
+                                                    medicId: app.medicId,
+                                                  }),
+                                              },
+                                            ],
+                                          )
                                         }
                                       >
-                                        <Text style={{ fontSize: 12, color: theme.success }}>Approve</Text>
+                                        <Text style={{ fontSize: 12, color: theme.primary, fontFamily: "Inter_600SemiBold" }}>
+                                          Hire
+                                        </Text>
+                                      </TouchableOpacity>
+                                    </View>
+                                  )}
+
+                                  {status === "APPROVED" && (
+                                    <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                                      <TouchableOpacity
+                                        style={{
+                                          flex: 1,
+                                          backgroundColor: `${theme.primary}15`,
+                                          borderRadius: 8,
+                                          paddingVertical: 8,
+                                          alignItems: "center",
+                                          borderWidth: 1,
+                                          borderColor: `${theme.primary}40`,
+                                        }}
+                                        onPress={() =>
+                                          Alert.alert(
+                                            "Hire medic",
+                                            "This will mark the medic as HIRED and add them to your hired list.",
+                                            [
+                                              { text: "Cancel", style: "cancel" },
+                                              {
+                                                text: "Hire",
+                                                onPress: () =>
+                                                  hireApplicationMutation.mutate({
+                                                    jobId: item.id,
+                                                    medicId: app.medicId,
+                                                  }),
+                                              },
+                                            ],
+                                          )
+                                        }
+                                      >
+                                        <Text
+                                          style={{
+                                            fontSize: 12,
+                                            color: theme.primary,
+                                            fontFamily: "Inter_600SemiBold",
+                                          }}
+                                        >
+                                          Hire
+                                        </Text>
                                       </TouchableOpacity>
                                       <TouchableOpacity
                                         style={{
@@ -498,7 +744,7 @@ export default function HospitalJobsScreen() {
                                           })
                                         }
                                       >
-                                        <Text style={{ fontSize: 12, color: theme.error }}>Reject</Text>
+                                        <Text style={{ fontSize: 12, color: theme.error }}>Deny</Text>
                                       </TouchableOpacity>
                                     </View>
                                   )}

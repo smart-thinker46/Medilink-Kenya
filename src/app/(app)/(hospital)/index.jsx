@@ -63,16 +63,19 @@ export default function HospitalHomeScreen() {
   const isSuperAdmin = String(auth?.user?.role || "").toUpperCase() === "SUPER_ADMIN";
   const isWide = screenWidth >= 1024;
   const { unreadCount } = useNotifications();
-  const firstName = getFirstName(auth?.user, "Hospital Admin");
+  const facilityName =
+    String(profile?.hospitalName || profile?.name || "").trim() ||
+    getFirstName(avatarUser, "Hospital Admin");
+  const firstName = facilityName;
   const timeGreeting = getTimeGreeting();
 
   const jobsQuery = useQuery({
-    queryKey: ["hospital-jobs"],
-    queryFn: () => apiClient.getJobs(),
+    queryKey: ["hospital-jobs", "mine"],
+    queryFn: () => apiClient.getJobs({ mine: true }),
   });
   const shiftsQuery = useQuery({
-    queryKey: ["hospital-shifts"],
-    queryFn: () => apiClient.getShifts(),
+    queryKey: ["hospital-shifts", "mine"],
+    queryFn: () => apiClient.getShifts({ mine: true }),
   });
   const appointmentsQuery = useQuery({
     queryKey: ["hospital-appointments"],
@@ -87,8 +90,54 @@ export default function HospitalHomeScreen() {
     queryFn: () => apiClient.getHospitalAnalytics(),
   });
 
-  const jobs = jobsQuery.data || [];
-  const shifts = shiftsQuery.data || [];
+  const jobs = jobsQuery.data?.items || jobsQuery.data || [];
+  const shifts = shiftsQuery.data?.items || shiftsQuery.data || [];
+  const visibleShiftSeries = useMemo(() => {
+    if (!Array.isArray(shifts)) return [];
+    const getRepeatKey = (value) => String(value || "").trim().toLowerCase();
+    const makeSeriesKey = (shift) =>
+      [
+        String(shift?.title || shift?.task || "").trim().toLowerCase(),
+        String(shift?.department || "").trim().toLowerCase(),
+        String(shift?.specialization || shift?.category || "").trim().toLowerCase(),
+        String(shift?.startTime || "").trim(),
+        String(shift?.endTime || "").trim(),
+        String(shift?.shiftType || "").trim().toLowerCase(),
+        String(shift?.hospitalBranch || "").trim().toLowerCase(),
+        String(shift?.roomNumber || "").trim().toLowerCase(),
+        String(shift?.location || shift?.area || "").trim().toLowerCase(),
+        String(shift?.payType || "").trim().toLowerCase(),
+        String(shift?.payAmount || "").trim(),
+        String(shift?.createdBy || "").trim(),
+      ].join("|");
+
+    const seriesKeys = new Set();
+    const result = [];
+    for (const shift of shifts) {
+      const repeat = getRepeatKey(shift?.repeatInterval);
+      if (!repeat || repeat === "none") {
+        result.push(shift);
+        continue;
+      }
+      const key = makeSeriesKey(shift);
+      if (seriesKeys.has(key)) continue;
+      seriesKeys.add(key);
+      result.push(shift);
+    }
+    return result;
+  }, [shifts]);
+  const openShiftsCount = useMemo(() => {
+    const items = Array.isArray(visibleShiftSeries) ? visibleShiftSeries : [];
+    return items.filter(
+      (shift) => !["CLOSED", "CANCELLED"].includes(String(shift?.status || "").toUpperCase()),
+    ).length;
+  }, [visibleShiftSeries]);
+  const openJobsCount = useMemo(() => {
+    const items = Array.isArray(jobs) ? jobs : [];
+    return items.filter(
+      (job) => !["CLOSED", "CANCELLED"].includes(String(job?.status || "").toUpperCase()),
+    ).length;
+  }, [jobs]);
   const applicantIds = useMemo(() => {
     const ids = new Set();
     const jobItems = jobsQuery.data?.items || jobsQuery.data || [];
@@ -142,6 +191,24 @@ export default function HospitalHomeScreen() {
   };
 
   const quickActions = [
+    {
+      id: "my-shifts",
+      title: "My Shifts",
+      description: "View shifts you created",
+      icon: Clock,
+      color: theme.info,
+      badge: Array.isArray(visibleShiftSeries) ? visibleShiftSeries.length : 0,
+      onPress: () => router.push("/(app)/(hospital)/shifts"),
+    },
+    {
+      id: "my-jobs",
+      title: "My Jobs",
+      description: "View jobs you posted",
+      icon: Briefcase,
+      color: theme.primary,
+      badge: Array.isArray(jobs) ? jobs.length : 0,
+      onPress: () => router.push("/(app)/(hospital)/jobs"),
+    },
     {
       id: "post-job",
       title: "Post Job",
@@ -206,6 +273,7 @@ export default function HospitalHomeScreen() {
       : []),
     { key: "dashboard", title: "Dashboard", href: "/(app)/(hospital)", icon: Home },
     { key: "staffing", title: "Staffing", href: "/(app)/(hospital)/staffing", icon: Briefcase },
+    { key: "shifts", title: "Shifts", href: "/(app)/(hospital)/shifts", icon: Clock },
     { key: "jobs", title: "Jobs", href: "/(app)/(hospital)/jobs", icon: Briefcase },
     { key: "medics", title: "Medics", href: "/(app)/(hospital)/medics", icon: Users },
     { key: "appointments", title: "Appointments", href: "/(app)/(hospital)/appointments", icon: Calendar },
@@ -571,7 +639,7 @@ export default function HospitalHomeScreen() {
                 color: theme.textSecondary,
               }}
             >
-              Open shifts: {shifts.length} • Open jobs: {jobs.length}
+              Open shifts: {openShiftsCount} • Open jobs: {openJobsCount}
             </Text>
             <Text
               style={{

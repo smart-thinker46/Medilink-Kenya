@@ -6,6 +6,7 @@ import {
   FlatList,
   TextInput,
   Image,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -13,11 +14,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Search,
-  Plus,
-  Minus,
   CreditCard,
   ShoppingCart,
+  ScanLine,
 } from "lucide-react-native";
+import { MotiView } from "moti";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import ProfileRequiredBanner from "@/components/ProfileRequiredBanner";
@@ -32,7 +33,7 @@ import { resolveMediaUrl } from "@/utils/media";
 export default function HospitalInventoryPosScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { theme, isDark } = useAppTheme();
+  const { theme } = useAppTheme();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const { auth } = useAuthStore();
@@ -48,6 +49,7 @@ export default function HospitalInventoryPosScreen() {
   const [cart, setCart] = useState([]);
   const paymentMethod = "intasend";
   const [customerPhone, setCustomerPhone] = useState(auth?.user?.phone || "");
+  const [showCartPanel, setShowCartPanel] = useState(true);
 
   const productsQuery = useQuery({
     queryKey: ["hospital-inventory-pos-products", hospitalTenantId],
@@ -116,6 +118,8 @@ export default function HospitalInventoryPosScreen() {
       },
     });
   };
+
+  const clearCart = () => setCart([]);
 
   const removeFromCart = (product) => {
     const existing = cart.find((item) => item.id === product.id);
@@ -201,6 +205,171 @@ export default function HospitalInventoryPosScreen() {
     }
   };
 
+  const renderCartPanel = () => (
+    <View
+      style={{
+        backgroundColor: theme.card,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: theme.border,
+        padding: 14,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <ShoppingCart color={theme.primary} size={16} />
+          <Text style={{ color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+            Cart ({cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0)})
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => clearCart()}
+          disabled={!cart.length}
+          style={{
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+            borderRadius: 10,
+            backgroundColor: cart.length ? `${theme.error}15` : theme.surface,
+            borderWidth: 1,
+            borderColor: cart.length ? `${theme.error}40` : theme.border,
+          }}
+        >
+          <Text style={{ fontSize: 12, color: cart.length ? theme.error : theme.textSecondary }}>
+            Clear
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {cart.length ? (
+        <View style={{ marginTop: 12, gap: 10 }}>
+          {cart.map((item) => {
+            const qty = Number(item.quantity || 0);
+            return (
+              <View
+                key={item.id}
+                style={{
+                  backgroundColor: theme.surface,
+                  borderRadius: 12,
+                  padding: 12,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                }}
+              >
+                <Text style={{ color: theme.text, fontFamily: "Inter_600SemiBold", fontSize: 13 }} numberOfLines={1}>
+                  {item.name || item.productName}
+                </Text>
+                <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>
+                  KES {Number(item.price || 0)} each
+                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", marginTop: 10 }}>
+                  <TouchableOpacity
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 10,
+                      backgroundColor: theme.card,
+                      borderWidth: 1,
+                      borderColor: theme.border,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                    onPress={() => removeFromCart(item)}
+                  >
+                    <Text style={{ color: theme.text, fontSize: 16, fontFamily: "Inter_600SemiBold" }}>-</Text>
+                  </TouchableOpacity>
+                  <Text style={{ width: 44, textAlign: "center", color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                    {qty}
+                  </Text>
+                  <TouchableOpacity
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 10,
+                      backgroundColor: theme.primary,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                    onPress={() => addToCart(item)}
+                  >
+                    <Text style={{ color: "#FFFFFF", fontSize: 16, fontFamily: "Inter_600SemiBold" }}>+</Text>
+                  </TouchableOpacity>
+                  <Text style={{ marginLeft: "auto", color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                    KES {(Number(item.price || 0) * qty).toFixed(0)}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ) : (
+        <Text style={{ marginTop: 12, color: theme.textSecondary, fontSize: 12 }}>
+          Add products to begin checkout.
+        </Text>
+      )}
+
+      <View style={{ marginTop: 14, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 12 }}>
+        <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
+          Payments are processed via IntaSend.
+        </Text>
+        <View
+          style={{
+            backgroundColor: `${theme.primary}10`,
+            borderRadius: 12,
+            paddingHorizontal: 12,
+            marginTop: 10,
+            borderWidth: 2,
+            borderColor: theme.primary,
+          }}
+        >
+          <Text
+            style={{
+              color: theme.primary,
+              fontSize: 12,
+              fontFamily: "Inter_600SemiBold",
+              marginTop: 8,
+            }}
+          >
+            Customer Phone Number (optional)
+          </Text>
+          <TextInput
+            value={customerPhone}
+            onChangeText={setCustomerPhone}
+            keyboardType="phone-pad"
+            placeholder="Customer phone number"
+            placeholderTextColor={theme.textSecondary}
+            style={{ color: theme.text, paddingVertical: 10 }}
+          />
+        </View>
+
+        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 10 }}>
+          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>Total</Text>
+          <Text style={{ marginLeft: "auto", color: theme.text, fontFamily: "Inter_700Bold" }}>
+            KES {total.toFixed(2)}
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={{
+            backgroundColor: cart.length ? theme.primary : theme.border,
+            borderRadius: 12,
+            paddingVertical: 10,
+            alignItems: "center",
+            justifyContent: "center",
+            flexDirection: "row",
+            marginTop: 12,
+          }}
+          onPress={checkout}
+          disabled={!cart.length}
+        >
+          <CreditCard color="#FFFFFF" size={16} />
+          <Text style={{ color: "#FFFFFF", marginLeft: 6, fontFamily: "Inter_600SemiBold" }}>
+            Checkout Sale
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
   return (
     <ScreenLayout>
       <View style={{ flex: 1, paddingTop: insets.top + 20, paddingBottom: insets.bottom }}>
@@ -230,6 +399,49 @@ export default function HospitalInventoryPosScreen() {
           <Text style={{ fontSize: 24, fontFamily: "Nunito_700Bold", color: theme.text }}>
             Hospital POS
           </Text>
+          <TouchableOpacity
+            onPress={() => {
+              if (Platform.OS === "web") {
+                setShowCartPanel((prev) => !prev);
+              } else {
+                showToast("Cart is shown at the bottom.", "info");
+              }
+            }}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: theme.surface,
+              justifyContent: "center",
+              alignItems: "center",
+              marginLeft: "auto",
+              borderWidth: 1,
+              borderColor: theme.border,
+            }}
+            activeOpacity={0.8}
+          >
+            <ShoppingCart color={theme.text} size={18} />
+            {cart.length > 0 && (
+              <View
+                style={{
+                  position: "absolute",
+                  top: -4,
+                  right: -4,
+                  minWidth: 18,
+                  height: 18,
+                  borderRadius: 9,
+                  backgroundColor: theme.primary,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  paddingHorizontal: 4,
+                }}
+              >
+                <Text style={{ color: "#FFFFFF", fontSize: 10, fontFamily: "Inter_600SemiBold" }}>
+                  {cart.length}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
 
         {completion.percent < 100 && (
@@ -240,195 +452,185 @@ export default function HospitalInventoryPosScreen() {
           />
         )}
 
-        <View style={{ paddingHorizontal: 24, marginBottom: 12 }}>
-          <View
-            style={{
-              backgroundColor: theme.surface,
-              borderRadius: 12,
-              paddingHorizontal: 12,
-              paddingVertical: 8,
-              flexDirection: "row",
-              alignItems: "center",
-            }}
-          >
-            <Search color={theme.iconColor} size={16} />
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search inventory products"
-              placeholderTextColor={theme.textSecondary}
-              style={{ color: theme.text, flex: 1, marginLeft: 8 }}
-            />
-          </View>
-        </View>
-
-        <FlatList
-          data={filtered}
-          keyExtractor={(item, index) => item.id || `inv-${index}`}
-          contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 180 }}
-          renderItem={({ item }) => {
-            const cartItem = cart.find((entry) => entry.id === item.id);
-            const qty = cartItem?.quantity || 0;
-            return (
-              <View
-                style={{
-                  backgroundColor: theme.card,
-                  borderRadius: 14,
-                  padding: 12,
-                  marginBottom: 10,
-                  borderWidth: 1,
-                  borderColor: theme.border,
-                }}
-              >
-                {(item.imageUrl || item.image) ? (
-                  <View
-                    style={{
-                      width: "100%",
-                      height: 100,
-                      borderRadius: 10,
-                      overflow: "hidden",
-                      marginBottom: 8,
-                      backgroundColor: theme.surface,
-                    }}
-                  >
-                    <Image
-                      source={{ uri: resolveMediaUrl(item.imageUrl || item.image || item.photoUrl) }}
-                      style={{ width: "100%", height: "100%" }}
-                      resizeMode="cover"
-                    />
-                  </View>
-                ) : null}
-                <Text style={{ color: theme.text, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>
-                  {item.name || item.productName}
-                </Text>
-                <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>
-                  Stock: {getStock(item)} • Price: KES {Number(item.price || 0)}
-                </Text>
-                <View
-                  style={{
-                    marginTop: 8,
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
-                  <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
-                    In cart: {qty}
-                  </Text>
-                  <View style={{ flexDirection: "row", gap: 8 }}>
-                    <TouchableOpacity
-                      style={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: 8,
-                        backgroundColor: theme.surface,
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                      onPress={() => removeFromCart(item)}
-                    >
-                      <Minus color={theme.iconColor} size={14} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: 8,
-                        backgroundColor: theme.primary,
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                      onPress={() => addToCart(item)}
-                    >
-                      <Plus color="#FFFFFF" size={14} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            );
-          }}
-          ListEmptyComponent={() => (
-            <View style={{ backgroundColor: theme.card, borderRadius: 14, padding: 16 }}>
-              <Text style={{ color: theme.textSecondary }}>
-                No products in inventory.
-              </Text>
-            </View>
-          )}
-        />
-
         <View
           style={{
-            position: "absolute",
-            left: 16,
-            right: 16,
-            bottom: insets.bottom + 10,
-            backgroundColor: theme.card,
-            borderRadius: 16,
-            borderWidth: 1,
-            borderColor: theme.border,
-            padding: 12,
+            flex: 1,
+            flexDirection: Platform.OS === "web" ? "row" : "column",
+            paddingHorizontal: 24,
+            gap: Platform.OS === "web" ? 16 : 0,
           }}
         >
-          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
-            <ShoppingCart color={theme.primary} size={16} />
-            <Text style={{ marginLeft: 8, color: theme.text }}>
-              {cart.reduce((sum, item) => sum + item.quantity, 0)} item(s) • KES{" "}
-              {total.toFixed(2)}
-            </Text>
-          </View>
+          <View style={{ flex: 1 }}>
+            <View style={{ marginBottom: 16, marginTop: 16 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: theme.surface,
+                  borderRadius: 16,
+                  paddingHorizontal: 16,
+                  paddingVertical: 12,
+                }}
+              >
+                <Search color={theme.iconColor} size={20} />
+                <TextInput
+                  style={{
+                    flex: 1,
+                    fontSize: 16,
+                    fontFamily: "Inter_400Regular",
+                    color: theme.text,
+                    marginLeft: 12,
+                  }}
+                  placeholder="Search products..."
+                  placeholderTextColor={theme.textTertiary}
+                  value={query}
+                  onChangeText={setQuery}
+                />
+              </View>
+            </View>
 
-          <Text style={{ color: theme.textSecondary, fontSize: 12, marginBottom: 8 }}>
-            Payments are processed via IntaSend.
-          </Text>
-
-          <View
-            style={{
-              backgroundColor: `${theme.primary}10`,
-              borderRadius: 12,
-              paddingHorizontal: 12,
-              marginBottom: 8,
-              borderWidth: 2,
-              borderColor: theme.primary,
-            }}
-          >
-            <Text
-              style={{
-                color: theme.primary,
-                fontSize: 12,
-                fontFamily: "Inter_600SemiBold",
-                marginTop: 8,
+            <FlatList
+              data={filtered}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={{
+                paddingBottom: 140,
+                ...(Platform.OS === "web"
+                  ? {
+                      flexDirection: "row",
+                      flexWrap: "wrap",
+                      alignItems: "stretch",
+                      justifyContent: "flex-start",
+                      columnGap: 16,
+                      rowGap: 16,
+                    }
+                  : null),
               }}
-            >
-              Customer Phone Number (optional)
-            </Text>
-            <TextInput
-              value={customerPhone}
-              onChangeText={setCustomerPhone}
-              keyboardType="phone-pad"
-              placeholder="Customer phone number"
-              placeholderTextColor={theme.textSecondary}
-              style={{ color: theme.text, paddingVertical: 10 }}
+              renderItem={({ item, index }) => (
+                <MotiView
+                  from={{ opacity: 0, translateY: 10 }}
+                  animate={{ opacity: 1, translateY: 0 }}
+                  transition={{ type: "timing", duration: 500, delay: index * 60 }}
+                  style={{
+                    marginBottom: Platform.OS === "web" ? 0 : 12,
+                    width: Platform.OS === "web" ? "25%" : "100%",
+                    padding: Platform.OS === "web" ? 8 : 0,
+                    flexBasis: Platform.OS === "web" ? "25%" : undefined,
+                    minWidth: Platform.OS === "web" ? 220 : undefined,
+                    maxWidth: Platform.OS === "web" ? 300 : "100%",
+                    flexGrow: Platform.OS === "web" ? 1 : 0,
+                  }}
+                >
+                  <View
+                    style={{
+                      backgroundColor: theme.card,
+                      borderRadius: 16,
+                      padding: 16,
+                      borderWidth: 1,
+                      borderColor: theme.border,
+                      minHeight: Platform.OS === "web" ? 280 : undefined,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: "100%",
+                        height: Platform.OS === "web" ? 140 : 70,
+                        borderRadius: 12,
+                        backgroundColor: theme.surface,
+                        marginBottom: 12,
+                        overflow: "hidden",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {item.imageUrl || item.image || item.photoUrl ? (
+                        <Image
+                          source={{ uri: resolveMediaUrl(item.imageUrl || item.image || item.photoUrl) }}
+                          style={{ width: "100%", height: "100%" }}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <ScanLine color={theme.iconColor} size={20} />
+                      )}
+                    </View>
+                    <Text
+                      style={{
+                        fontSize: 14,
+                        fontFamily: "Inter_600SemiBold",
+                        color: theme.text,
+                      }}
+                      numberOfLines={2}
+                    >
+                      {item.name || item.productName}
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: theme.textSecondary,
+                        marginTop: 4,
+                      }}
+                    >
+                      Stock {getStock(item)}
+                      {Boolean(item.prescriptionRequired ?? item.requiresPrescription ?? item.prescription)
+                        ? " • Prescription"
+                        : ""}
+                    </Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", marginTop: 10 }}>
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          fontFamily: "Inter_600SemiBold",
+                          color: theme.text,
+                          flex: 1,
+                        }}
+                      >
+                        KES {item.price}
+                      </Text>
+                      <TouchableOpacity
+                        style={{
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          borderRadius: 10,
+                          backgroundColor: theme.primary,
+                        }}
+                        onPress={() => addToCart(item)}
+                      >
+                        <Text style={{ color: "#FFFFFF", fontSize: 12, fontFamily: "Inter_600SemiBold" }}>
+                          Add
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </MotiView>
+              )}
+              ListEmptyComponent={() => (
+                <View style={{ backgroundColor: theme.card, borderRadius: 14, padding: 16 }}>
+                  <Text style={{ color: theme.textSecondary }}>
+                    No products in inventory.
+                  </Text>
+                </View>
+              )}
             />
           </View>
 
-          <TouchableOpacity
-            style={{
-              backgroundColor: cart.length ? theme.primary : theme.border,
-              borderRadius: 12,
-              paddingVertical: 10,
-              alignItems: "center",
-              justifyContent: "center",
-              flexDirection: "row",
-            }}
-            onPress={checkout}
-            disabled={!cart.length}
-          >
-            <CreditCard color="#FFFFFF" size={16} />
-            <Text style={{ color: "#FFFFFF", marginLeft: 6, fontFamily: "Inter_600SemiBold" }}>
-              Checkout Sale
-            </Text>
-          </TouchableOpacity>
+          {Platform.OS === "web" && showCartPanel && (
+            <View style={{ width: 320 }}>
+              {renderCartPanel()}
+            </View>
+          )}
         </View>
+
+        {Platform.OS !== "web" && cart.length > 0 && (
+          <View
+            style={{
+              position: "absolute",
+              bottom: insets.bottom + 20,
+              left: 24,
+              right: 24,
+            }}
+          >
+            {renderCartPanel()}
+          </View>
+        )}
       </View>
     </ScreenLayout>
   );

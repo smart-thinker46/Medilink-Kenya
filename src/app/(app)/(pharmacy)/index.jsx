@@ -17,6 +17,7 @@ import {
   ShoppingCart,
   ClipboardList,
   Briefcase,
+  Plus,
   Package,
   PieChart,
   MapPin,
@@ -54,7 +55,10 @@ export default function PharmacyHomeScreen() {
   const { unreadCount } = useNotifications();
   const { auth } = useAuthStore();
   const avatarUser = { ...(auth?.user || {}), ...(profile || {}) };
-  const firstName = getFirstName(auth?.user, "Pharmacy Admin");
+  const facilityName =
+    String(profile?.pharmacyName || profile?.name || "").trim() ||
+    getFirstName(avatarUser, "Pharmacy Admin");
+  const firstName = facilityName;
   const timeGreeting = getTimeGreeting();
   const {
     isSuperAdmin,
@@ -76,6 +80,10 @@ export default function PharmacyHomeScreen() {
   const ordersQuery = useQuery({
     queryKey: ["pharmacy-orders"],
     queryFn: () => apiClient.getOrders(),
+  });
+  const jobsQuery = useQuery({
+    queryKey: ["pharmacy-jobs", "mine"],
+    queryFn: () => apiClient.getJobs({ mine: true }),
   });
 
   const productsQuery = useQuery({
@@ -111,6 +119,7 @@ export default function PharmacyHomeScreen() {
     },
   });
 
+  const jobs = jobsQuery.data?.items || jobsQuery.data || [];
   const handleProtected = (action) => {
     if (!isProfileComplete) {
       Alert.alert(
@@ -155,12 +164,21 @@ export default function PharmacyHomeScreen() {
       onPress: () => handleProtected(() => router.push("/(app)/(pharmacy)/products")),
     },
     {
-      id: "jobs",
-      title: "Jobs",
-      description: "Post hiring opportunities",
+      id: "my-jobs",
+      title: "My Jobs",
+      description: "View jobs you posted",
       icon: Briefcase,
       color: theme.primary,
+      badge: Array.isArray(jobs) ? jobs.length : 0,
       onPress: () => handleProtected(() => router.push("/(app)/(pharmacy)/jobs")),
+    },
+    {
+      id: "post-job",
+      title: "Post Job",
+      description: "Publish hiring opportunities",
+      icon: Plus,
+      color: theme.primary,
+      onPress: () => handleProtected(() => router.push("/(app)/(pharmacy)/job-create")),
     },
     {
       id: "payments",

@@ -55,7 +55,7 @@ export default function PatientHomeScreen() {
   const { profile } = usePatientProfile();
   const avatarUser = { ...(auth?.user || {}), ...(profile || {}) };
   const { unreadCount } = useNotifications();
-  const firstName = getFirstName(auth?.user, "Patient");
+  const firstName = getFirstName(avatarUser, "Patient");
   const timeGreeting = getTimeGreeting();
   const isWideWeb = Platform.OS === "web" && screenWidth >= 1024;
 

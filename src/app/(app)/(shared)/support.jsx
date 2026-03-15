@@ -26,6 +26,7 @@ import { useAppTheme } from "@/components/ThemeProvider";
 import { useToast } from "@/components/ToastProvider";
 import { useAuthStore } from "@/utils/auth/store";
 import apiClient from "@/utils/api";
+import { useAppSettingsStore } from "@/utils/appSettings/store";
 
 const ROLE_HOME_PATH = {
   PATIENT: "/(app)/(patient)",
@@ -86,6 +87,7 @@ export default function SupportScreen() {
   const { theme } = useAppTheme();
   const { showToast } = useToast();
   const { auth } = useAuthStore();
+  const contact = useAppSettingsStore((s) => s.contact);
   const role = String(auth?.user?.role || "").toUpperCase();
   const [query, setQuery] = useState("");
   const [sendingSupportRequest, setSendingSupportRequest] = useState(false);
@@ -112,7 +114,8 @@ export default function SupportScreen() {
     const body = encodeURIComponent(
       "Hello Support,\n\nPlease help me with:\n\nDevice:\nApp role:\nIssue details:\n\nThanks.",
     );
-    const url = `mailto:support@medilink.africa?subject=${subject}&body=${body}`;
+    const email = String(contact?.email || "support@medilink.co.ke").trim();
+    const url = `mailto:${email}?subject=${subject}&body=${body}`;
     const supported = await Linking.canOpenURL(url);
     if (!supported) {
       showToast("Could not open email app on this device.", "warning");
@@ -122,7 +125,8 @@ export default function SupportScreen() {
   };
 
   const openSupportCall = async () => {
-    const url = "tel:+254718835212";
+    const phone = String(contact?.phone || "+254 700 000 000").trim();
+    const url = `tel:${phone.replace(/\\s+/g, "")}`;
     const supported = await Linking.canOpenURL(url);
     if (!supported) {
       showToast("Phone dialer is unavailable on this device.", "warning");
@@ -263,7 +267,7 @@ export default function SupportScreen() {
           >
             <Phone color={theme.primary} size={16} />
             <Text style={{ marginLeft: 8, fontSize: 13, color: theme.text }}>
-              Call: 0718835212
+              Call: {String(contact?.phone || "+254 700 000 000").trim()}
             </Text>
           </TouchableOpacity>
 
@@ -282,7 +286,7 @@ export default function SupportScreen() {
           >
             <Mail color={theme.primary} size={16} />
             <Text style={{ marginLeft: 8, fontSize: 13, color: theme.text }}>
-              Email: support@medilink.africa
+              Email: {String(contact?.email || "support@medilink.co.ke").trim()}
             </Text>
           </TouchableOpacity>
 

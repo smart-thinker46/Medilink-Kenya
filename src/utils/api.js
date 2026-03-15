@@ -421,7 +421,22 @@ class ApiClient {
   }
 
   async updateProfile(data) {
-    return this.client.put("/users/profile", data);
+    const result = await this.client.put("/users/profile", data);
+    try {
+      const updatedUser = result?.user || null;
+      const state = useAuthStore.getState();
+      const auth = state?.auth;
+      const setAuth = state?.setAuth;
+      if (auth?.user && updatedUser && typeof updatedUser === "object" && typeof setAuth === "function") {
+        await setAuth({
+          ...auth,
+          user: { ...auth.user, ...updatedUser },
+        });
+      }
+    } catch {
+      // Never fail profile updates because of client-side store sync issues.
+    }
+    return result;
   }
 
   async updatePasswordPolicy(passwordUpdateIntervalDays) {
@@ -633,12 +648,20 @@ class ApiClient {
     return this.client.put(`/shifts/${shiftId}/applications/${medicId}/reject`);
   }
 
+  async hireShiftApplication(shiftId, medicId) {
+    return this.client.put(`/shifts/${shiftId}/applications/${medicId}/hire`);
+  }
+
   async approveJobApplication(jobId, medicId) {
     return this.client.put(`/jobs/${jobId}/applications/${medicId}/approve`);
   }
 
   async rejectJobApplication(jobId, medicId) {
     return this.client.put(`/jobs/${jobId}/applications/${medicId}/reject`);
+  }
+
+  async hireJobApplication(jobId, medicId) {
+    return this.client.put(`/jobs/${jobId}/applications/${medicId}/hire`);
   }
 
   async cancelShiftApplication(shiftId) {
@@ -1020,6 +1043,23 @@ class ApiClient {
 
   async adminGetAuditLogs(params = {}) {
     return this.client.get("/admin/audit-logs", { params });
+  }
+
+  async adminClearAuditLogs(params = {}, payload = { confirm: "DELETE" }) {
+    // axios supports DELETE with a request body via the `data` config field.
+    return this.client.delete("/admin/audit-logs", { params, data: payload });
+  }
+
+  async getAppContactInfo() {
+    return this.client.get("/app-settings/contact");
+  }
+
+  async adminGetAppContactInfo() {
+    return this.client.get("/admin/app-settings/contact");
+  }
+
+  async adminUpdateAppContactInfo(payload = {}) {
+    return this.client.put("/admin/app-settings/contact", payload);
   }
 
   async adminGetShifts() {

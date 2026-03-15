@@ -53,6 +53,66 @@ export default function HospitalShiftsScreen() {
       }),
   });
   const shifts = shiftsQuery.data?.items || shiftsQuery.data || [];
+  const visibleShifts = useMemo(() => {
+    if (!Array.isArray(shifts)) return [];
+
+    // If a shift is recurring (repeatInterval != none), the backend auto-creates future instances.
+    // Collapse those instances into one visible "series" row so creating 1 recurring shift shows as 1.
+    const getRepeatKey = (value) => String(value || "").trim().toLowerCase();
+    const makeSeriesKey = (shift) =>
+      [
+        String(shift?.title || shift?.task || "").trim().toLowerCase(),
+        String(shift?.department || "").trim().toLowerCase(),
+        String(shift?.specialization || shift?.category || "").trim().toLowerCase(),
+        String(shift?.startTime || "").trim(),
+        String(shift?.endTime || "").trim(),
+        String(shift?.shiftType || "").trim().toLowerCase(),
+        String(shift?.consultationDuration || "").trim(),
+        String(shift?.maxPatients || "").trim(),
+        String(shift?.hospitalBranch || "").trim().toLowerCase(),
+        String(shift?.roomNumber || "").trim().toLowerCase(),
+        String(shift?.location || shift?.area || "").trim().toLowerCase(),
+        String(shift?.payType || "").trim().toLowerCase(),
+        String(shift?.payAmount || "").trim(),
+        String(shift?.createdBy || "").trim(),
+      ].join("|");
+
+    const bySeries = new Map();
+    const nonRecurring = [];
+
+    for (const shift of shifts) {
+      const repeat = getRepeatKey(shift?.repeatInterval);
+      if (!repeat || repeat === "none") {
+        nonRecurring.push(shift);
+        continue;
+      }
+      const key = makeSeriesKey(shift);
+      const existing = bySeries.get(key) || [];
+      existing.push(shift);
+      bySeries.set(key, existing);
+    }
+
+    const pickRepresentative = (occurrences) => {
+      const sorted = [...occurrences].sort((a, b) => {
+        const da = String(a?.shiftDate || a?.date || "");
+        const db = String(b?.shiftDate || b?.date || "");
+        return da.localeCompare(db);
+      });
+      const rep = sorted[0] || occurrences[0];
+      return {
+        ...rep,
+        __occurrenceCount: sorted.length,
+        __occurrences: sorted,
+      };
+    };
+
+    const recurringSeries = Array.from(bySeries.values()).map(pickRepresentative);
+    return [...nonRecurring, ...recurringSeries].sort((a, b) => {
+      const da = String(a?.shiftDate || a?.date || "");
+      const db = String(b?.shiftDate || b?.date || "");
+      return db.localeCompare(da);
+    });
+  }, [shifts]);
   const filterOptions = useMemo(() => {
     const unique = (items) => [...new Set(items.filter(Boolean))];
     return {
@@ -89,15 +149,28 @@ export default function HospitalShiftsScreen() {
     },
   });
 
+  const hireApplicationMutation = useMutation({
+    mutationFn: ({ shiftId, medicId }) => apiClient.hireShiftApplication(shiftId, medicId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["shifts", "hospital"] });
+      queryClient.invalidateQueries({ queryKey: ["available-shifts"] });
+      queryClient.invalidateQueries({ queryKey: ["medics", "hired"] });
+      showToast("Medic hired.", "success");
+    },
+    onError: (error) => {
+      showToast(error?.message || "Hire failed.", "error");
+    },
+  });
+
   const rejectApplicationMutation = useMutation({
     mutationFn: ({ shiftId, medicId }) => apiClient.rejectShiftApplication(shiftId, medicId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["shifts", "hospital"] });
       queryClient.invalidateQueries({ queryKey: ["available-shifts"] });
-      showToast("Application rejected.", "success");
+      showToast("Application denied.", "success");
     },
     onError: (error) => {
-      showToast(error?.message || "Reject failed.", "error");
+      showToast(error?.message || "Deny failed.", "error");
     },
   });
 
@@ -300,17 +373,59 @@ export default function HospitalShiftsScreen() {
         </View>
 
         <FlatList
-          data={shifts}
+          data={visibleShifts}
           keyExtractor={(item, index) => item.id || `shift-${index}`}
           contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24 }}
           renderItem={({ item, index }) => {
-            const appliedCount = Array.isArray(item?.applications) ? item.applications.length : 0;
+            const occurrenceCount = Number(item?.__occurrenceCount || 1);
+            const occurrences = Array.isArray(item?.__occurrences) ? item.__occurrences : [item];
+            const appliedCount = occurrences.reduce((sum, shift) => {
+              const apps = Array.isArray(shift?.applications) ? shift.applications : [];
+              return sum + apps.length;
+            }, 0);
             const applications = Array.isArray(item?.applications) ? item.applications : [];
-            const approvedCount = applications.filter(
-              (app) => String(app?.status || "").toUpperCase() === "APPROVED",
+            const approvedCount = applications.filter((app) =>
+              ["APPROVED", "HIRED"].includes(String(app?.status || "").toUpperCase()),
             ).length;
             const requiredSlots = Number(item?.requiredMedics || 0);
             const isExpanded = expandedShiftId === item.id;
+            const shiftTypeKey = String(item?.shiftType || "").toLowerCase();
+            const shiftTypeText = shiftTypeKey ? shiftTypeKey : "N/A";
+            const shiftTone =
+              shiftTypeKey === "morning"
+                ? theme.success
+                : shiftTypeKey === "afternoon"
+                  ? theme.info
+                  : shiftTypeKey === "night"
+                    ? theme.accent
+                    : shiftTypeKey === "emergency"
+                      ? theme.error
+                      : theme.primary;
+            const slotsTone =
+              requiredSlots > 0 && approvedCount >= requiredSlots
+                ? theme.success
+                : approvedCount > 0
+                  ? theme.info
+                  : theme.warning;
+            const applicantPreviewNames = applications
+              .slice(0, 3)
+              .map((app, idx) => {
+                const raw =
+                  app?.medicName ||
+                  app?.medicEmail ||
+                  app?.fullName ||
+                  app?.email ||
+                  app?.medicId ||
+                  `Medic ${idx + 1}`;
+                return String(raw || "").trim();
+              })
+              .filter(Boolean);
+            const remainingApplicants = Math.max(0, appliedCount - applicantPreviewNames.length);
+            const applicantPreviewText = applicantPreviewNames.length
+              ? `${applicantPreviewNames.join(", ")}${remainingApplicants ? ` +${remainingApplicants}` : ""}`
+              : appliedCount > 0
+                ? `${appliedCount} applicant(s)`
+                : "No applicants yet";
             return (
             <MotiView
               from={{ opacity: 0, translateY: 10 }}
@@ -376,6 +491,85 @@ export default function HospitalShiftsScreen() {
                 >
                   {isExpanded ? "Tap shift title to collapse" : "Tap shift title to view details"}
                 </Text>
+
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                  <View
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: `${shiftTone}55`,
+                      backgroundColor: `${shiftTone}15`,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        color: shiftTone,
+                        fontFamily: "Inter_600SemiBold",
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      Type: {shiftTypeText}
+                    </Text>
+                  </View>
+                  <View
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: `${slotsTone}55`,
+                      backgroundColor: `${slotsTone}15`,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        color: slotsTone,
+                        fontFamily: "Inter_600SemiBold",
+                      }}
+                    >
+                      Slots: {approvedCount}/{requiredSlots || "?"} approved
+                    </Text>
+                  </View>
+                  {occurrenceCount > 1 ? (
+                    <View
+                      style={{
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        borderRadius: 999,
+                        borderWidth: 1,
+                        borderColor: `${theme.primary}55`,
+                        backgroundColor: `${theme.primary}12`,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          color: theme.primary,
+                          fontFamily: "Inter_600SemiBold",
+                        }}
+                      >
+                        Occurrences: {occurrenceCount}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                <TouchableOpacity
+                  onPress={() => setExpandedShiftId((prev) => (prev === item.id ? null : item.id))}
+                  activeOpacity={0.8}
+                  style={{ marginTop: 10 }}
+                >
+                  <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                    Applicants:{" "}
+                    <Text style={{ color: theme.text, fontFamily: "Inter_600SemiBold" }}>
+                      {applicantPreviewText}
+                    </Text>
+                  </Text>
+                </TouchableOpacity>
                 {isExpanded && (
                   <>
                 <Text
@@ -536,26 +730,145 @@ export default function HospitalShiftsScreen() {
                             <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 2 }}>
                               Status: {status}
                             </Text>
+                            {status === "HIRED" && (
+                              <View
+                                style={{
+                                  marginTop: 8,
+                                  alignSelf: "flex-start",
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 6,
+                                  borderRadius: 999,
+                                  backgroundColor: `${theme.success}15`,
+                                  borderWidth: 1,
+                                  borderColor: `${theme.success}40`,
+                                }}
+                              >
+                                <Text
+                                  style={{
+                                    fontSize: 12,
+                                    color: theme.success,
+                                    fontFamily: "Inter_600SemiBold",
+                                  }}
+                                >
+                                  HIRED
+                                </Text>
+                              </View>
+                            )}
                             {status === "PENDING" && (
-                              <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                              <View style={{ marginTop: 8, gap: 8 }}>
+                                <View style={{ flexDirection: "row", gap: 8 }}>
+                                  <TouchableOpacity
+                                    style={{
+                                      flex: 1,
+                                      backgroundColor: `${theme.success}15`,
+                                      borderRadius: 8,
+                                      paddingVertical: 8,
+                                      alignItems: "center",
+                                      borderWidth: 1,
+                                      borderColor: `${theme.success}40`,
+                                    }}
+                                    onPress={() =>
+                                      approveApplicationMutation.mutate({
+                                        shiftId: item.id,
+                                        medicId: app.medicId,
+                                      })
+                                    }
+                                  >
+                                    <Text style={{ fontSize: 12, color: theme.success }}>Approve</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity
+                                    style={{
+                                      flex: 1,
+                                      backgroundColor: `${theme.error}15`,
+                                      borderRadius: 8,
+                                      paddingVertical: 8,
+                                      alignItems: "center",
+                                      borderWidth: 1,
+                                      borderColor: `${theme.error}40`,
+                                    }}
+                                    onPress={() =>
+                                      rejectApplicationMutation.mutate({
+                                        shiftId: item.id,
+                                        medicId: app.medicId,
+                                      })
+                                    }
+                                  >
+                                    <Text style={{ fontSize: 12, color: theme.error }}>Deny</Text>
+                                  </TouchableOpacity>
+                                </View>
                                 <TouchableOpacity
                                   style={{
-                                    flex: 1,
-                                    backgroundColor: `${theme.success}15`,
+                                    backgroundColor: `${theme.primary}15`,
                                     borderRadius: 8,
                                     paddingVertical: 8,
                                     alignItems: "center",
                                     borderWidth: 1,
-                                    borderColor: `${theme.success}40`,
+                                    borderColor: `${theme.primary}40`,
                                   }}
                                   onPress={() =>
-                                    approveApplicationMutation.mutate({
-                                      shiftId: item.id,
-                                      medicId: app.medicId,
-                                    })
+                                    Alert.alert(
+                                      "Hire medic",
+                                      "This will mark the medic as HIRED and add them to your hired list.",
+                                      [
+                                        { text: "Cancel", style: "cancel" },
+                                        {
+                                          text: "Hire",
+                                          onPress: () =>
+                                            hireApplicationMutation.mutate({
+                                              shiftId: item.id,
+                                              medicId: app.medicId,
+                                            }),
+                                        },
+                                      ],
+                                    )
                                   }
                                 >
-                                  <Text style={{ fontSize: 12, color: theme.success }}>Approve</Text>
+                                  <Text style={{ fontSize: 12, color: theme.primary, fontFamily: "Inter_600SemiBold" }}>
+                                    Hire
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            )}
+
+                            {status === "APPROVED" && (
+                              <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                                <TouchableOpacity
+                                  style={{
+                                    flex: 1,
+                                    backgroundColor: `${theme.primary}15`,
+                                    borderRadius: 8,
+                                    paddingVertical: 8,
+                                    alignItems: "center",
+                                    borderWidth: 1,
+                                    borderColor: `${theme.primary}40`,
+                                  }}
+                                  onPress={() =>
+                                    Alert.alert(
+                                      "Hire medic",
+                                      "This will mark the medic as HIRED and add them to your hired list.",
+                                      [
+                                        { text: "Cancel", style: "cancel" },
+                                        {
+                                          text: "Hire",
+                                          onPress: () =>
+                                            hireApplicationMutation.mutate({
+                                              shiftId: item.id,
+                                              medicId: app.medicId,
+                                            }),
+                                        },
+                                      ],
+                                    )
+                                  }
+                                >
+                                  <Text
+                                    style={{
+                                      fontSize: 12,
+                                      color: theme.primary,
+                                      fontFamily: "Inter_600SemiBold",
+                                    }}
+                                  >
+                                    Hire
+                                  </Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                   style={{
@@ -574,7 +887,7 @@ export default function HospitalShiftsScreen() {
                                     })
                                   }
                                 >
-                                  <Text style={{ fontSize: 12, color: theme.error }}>Reject</Text>
+                                  <Text style={{ fontSize: 12, color: theme.error }}>Deny</Text>
                                 </TouchableOpacity>
                               </View>
                             )}

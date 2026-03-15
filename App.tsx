@@ -8,6 +8,7 @@ import { Toaster } from 'sonner-native';
 import { AlertModal } from './polyfills/web/alerts.web';
 import './global.css';
 import { useAppIntegrity } from './src/utils/security/useAppIntegrity';
+import { useAutoLogoutOnBackground } from './src/utils/security/useAutoLogoutOnBackground';
 
 const GlobalErrorReporter = () => {
   useEffect(() => {
@@ -35,6 +36,7 @@ const GlobalErrorReporter = () => {
 
 const Wrapper = memo(() => {
   useAppIntegrity();
+  useAutoLogoutOnBackground();
   return (
     <ErrorBoundaryWrapper>
       <SafeAreaProvider

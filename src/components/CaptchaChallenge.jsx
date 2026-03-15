@@ -41,6 +41,7 @@ export default function CaptchaChallenge({
   style,
 }) {
   const { theme } = useAppTheme();
+  const onVerifiedRef = useRef(onVerified);
   const [challenge, setChallenge] = useState(null);
   const [answer, setAnswer] = useState("");
   const [error, setError] = useState("");
@@ -49,6 +50,10 @@ export default function CaptchaChallenge({
   const [selectedOption, setSelectedOption] = useState("");
   const knobX = useRef(new Animated.Value(0)).current;
   const sliderLocked = useRef(false);
+
+  useEffect(() => {
+    onVerifiedRef.current = onVerified;
+  }, [onVerified]);
 
   const resetSlider = useCallback(() => {
     sliderLocked.current = false;
@@ -64,7 +69,7 @@ export default function CaptchaChallenge({
     setError("");
     setAnswer("");
     setSelectedOption("");
-    onVerified?.("");
+    onVerifiedRef.current?.("");
     resetSlider();
     try {
       const data = await apiClient.captchaGenerate(
@@ -76,7 +81,7 @@ export default function CaptchaChallenge({
       setStatus("error");
       setError(err?.message || "Failed to load verification challenge.");
     }
-  }, [onVerified, preferredType, resetSlider]);
+  }, [preferredType, resetSlider]);
 
   useEffect(() => {
     loadChallenge();
@@ -89,11 +94,11 @@ export default function CaptchaChallenge({
     try {
       const response = await apiClient.captchaVerify(challenge.id, value);
       setStatus("verified");
-      onVerified?.(response?.token || "");
+      onVerifiedRef.current?.(response?.token || "");
     } catch (err) {
       setStatus("ready");
       setError(err?.message || "Verification failed. Try again.");
-      onVerified?.("");
+      onVerifiedRef.current?.("");
       resetSlider();
     }
   };

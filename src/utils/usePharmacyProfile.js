@@ -38,14 +38,24 @@ export const usePharmacyProfile = () => {
 
   const updateMutation = useMutation({
     mutationFn: (payload) => apiClient.updateProfile(payload),
-    onSuccess: (data) => {
+    onSuccess: (data, payload) => {
       const updatedUser = data?.user || data || {};
-      if (auth?.user) {
+      const fallbackUser = payload && typeof payload === "object" ? payload : {};
+      const merged = Object.keys(updatedUser || {}).length ? updatedUser : fallbackUser;
+
+      if (auth?.user && merged && typeof merged === "object") {
         setAuth({
           ...auth,
-          user: { ...auth.user, ...updatedUser },
+          user: { ...auth.user, ...merged },
         });
       }
+
+      queryClient.setQueryData(["pharmacy-profile"], (prev) => {
+        const existing = prev?.user || prev || {};
+        const nextUser = { ...(existing || {}), ...(merged || {}) };
+        return prev && typeof prev === "object" && "user" in prev ? { ...prev, user: nextUser } : { user: nextUser };
+      });
+
       queryClient.invalidateQueries({ queryKey: ["pharmacy-profile"] });
     },
   });

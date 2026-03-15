@@ -2,8 +2,11 @@ import { Platform, Image } from "react-native";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system/legacy";
+import { Asset } from "expo-asset";
+import { getAppContactSnapshot } from "@/utils/appSettings/store";
 
 const DEFAULT_LOGO = require("../assets/images/Medilink-logo.png");
+const DEFAULT_APP_ICON = require("../../assets/images/icon.png");
 const BASE64_ENCODING = FileSystem?.EncodingType?.Base64 || "base64";
 
 const formatCurrency = (amount, currency = "KES") => {
@@ -18,7 +21,7 @@ const escapeHtml = (value) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
-const buildReceiptHtml = ({ payment, payer, recipient, business, logoDataUri }) => {
+const buildReceiptHtml = ({ payment, payer, recipient, business, logoDataUri, iconDataUri }) => {
   const issuedAt = payment?.createdAt || new Date().toISOString();
   const receiptNumber = payment?.receiptNumber || payment?.id;
   const invoiceNumber = payment?.invoiceNumber || receiptNumber;
@@ -86,7 +89,7 @@ const buildReceiptHtml = ({ payment, payer, recipient, business, logoDataUri }) 
     <body>
       <div class="receipt">
         <div class="flag">
-          ${logoDataUri ? `<div class="flag-logo"><img src="${logoDataUri}" alt="Logo" /></div>` : ""}
+          ${iconDataUri ? `<div class="flag-logo"><img src="${iconDataUri}" alt="App icon" /></div>` : ""}
         </div>
         <div class="header">
           <div>
@@ -183,37 +186,76 @@ const buildReceiptHtml = ({ payment, payer, recipient, business, logoDataUri }) 
 
 const resolveLogoDataUri = async (logoSource) => {
   if (!logoSource) return null;
-  const resolved = Image.resolveAssetSource(logoSource);
-  if (!resolved?.uri) return null;
-  if (Platform.OS === "web") {
-    return resolved.uri;
-  }
+  // `Image.resolveAssetSource` isn't consistently available on web builds.
+  // Prefer `expo-asset` to resolve bundled module assets across platforms.
+  let uri = null;
   try {
-    const base64 = await FileSystem.readAsStringAsync(resolved.uri, {
+    if (typeof logoSource === "string") {
+      uri = logoSource;
+    } else if (logoSource?.uri) {
+      uri = logoSource.uri;
+    } else {
+      const asset = Asset.fromModule(logoSource);
+      if (!asset?.uri && typeof asset?.downloadAsync === "function") {
+        await asset.downloadAsync();
+      }
+      uri = asset?.localUri || asset?.uri || null;
+    }
+  } catch {
+    uri = null;
+  }
+
+  // Last-resort: try RN resolver if present.
+  if (!uri) {
+    try {
+      const resolver =
+        Image?.resolveAssetSource || Image?.default?.resolveAssetSource || null;
+      const resolved = resolver ? resolver(logoSource) : null;
+      uri = resolved?.uri || null;
+    } catch {
+      uri = null;
+    }
+  }
+
+  if (!uri) return null;
+  if (Platform.OS === "web") return uri;
+  try {
+    const base64 = await FileSystem.readAsStringAsync(uri, {
       encoding: BASE64_ENCODING,
     });
     return `data:image/png;base64,${base64}`;
   } catch {
-    return resolved.uri;
+    return uri;
   }
 };
 
-const prepareReceiptHtml = async ({ payment, payer, recipient, business, logo }) => {
+const prepareReceiptHtml = async ({ payment, payer, recipient, business, logo, icon }) => {
+  const contact = getAppContactSnapshot();
+  // Receipts should always show the global app contact info (admin-controlled),
+  // even if a screen passes a `business` object for branding.
   const businessInfo = {
     name: "MediLink Kenya",
-    address: "Nairobi, Kenya",
-    phone: "+254 700 000 000",
-    email: "support@medilink.co.ke",
     ...(business || {}),
+    address: contact?.address || business?.address || "Nairobi, Kenya",
+    phone: contact?.phone || business?.phone || "+254 700 000 000",
+    email: contact?.email || business?.email || "support@medilink.co.ke",
   };
   const logoDataUri = await resolveLogoDataUri(logo || DEFAULT_LOGO);
-  const html = buildReceiptHtml({ payment, payer, recipient, business: businessInfo, logoDataUri });
+  const iconDataUri = await resolveLogoDataUri(icon || DEFAULT_APP_ICON);
+  const html = buildReceiptHtml({
+    payment,
+    payer,
+    recipient,
+    business: businessInfo,
+    logoDataUri,
+    iconDataUri,
+  });
   const filename = `receipt-${payment?.receiptNumber || payment?.id || "payment"}.pdf`;
   return { html, filename };
 };
 
-export const previewReceipt = async ({ payment, payer, recipient, business, logo }) => {
-  const { html } = await prepareReceiptHtml({ payment, payer, recipient, business, logo });
+export const previewReceipt = async ({ payment, payer, recipient, business, logo, icon }) => {
+  const { html } = await prepareReceiptHtml({ payment, payer, recipient, business, logo, icon });
 
   if (Platform.OS === "web") {
     if (typeof document !== "undefined") {
@@ -231,13 +273,14 @@ export const previewReceipt = async ({ payment, payer, recipient, business, logo
   return { previewed: true };
 };
 
-export const exportReceipt = async ({ payment, payer, recipient, business, logo }) => {
+export const exportReceipt = async ({ payment, payer, recipient, business, logo, icon }) => {
   const { html, filename } = await prepareReceiptHtml({
     payment,
     payer,
     recipient,
     business,
     logo,
+    icon,
   });
 
   if (Platform.OS === "web") {

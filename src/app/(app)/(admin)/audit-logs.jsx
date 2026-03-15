@@ -1,8 +1,7 @@
 import React from "react";
-import { View, Text, ScrollView, TouchableOpacity, TextInput } from "react-native";
+import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useQuery } from "@tanstack/react-query";
-import { MotiView } from "moti";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
 
 import ScreenLayout from "@/components/ScreenLayout";
@@ -11,10 +10,19 @@ import { useToast } from "@/components/ToastProvider";
 import apiClient from "@/utils/api";
 import { shareCsv, emailCsv } from "@/utils/csvExport";
 
+let MotiViewComponent = null;
+try {
+  // Avoid hard dependency on Reanimated/Moti on web; fall back to plain View.
+  MotiViewComponent = require("moti")?.MotiView || null;
+} catch {
+  MotiViewComponent = null;
+}
+
 export default function AdminAuditLogsScreen() {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useAppTheme();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const params = useLocalSearchParams();
   const initialAction =
     typeof params?.action === "string" ? String(params.action || "").trim() : "";
@@ -62,6 +70,47 @@ export default function AdminAuditLogsScreen() {
     setPage(1);
   };
 
+  const confirmAndClear = ({ scope }) => {
+    const hasRange = Boolean(startDate || endDate);
+    const title = scope === "range" ? "Clear Logs (Date Range)" : "Clear All Logs";
+    const rangeHint =
+      scope === "range" && hasRange
+        ? `\n\nRange: ${startDate || "any"} to ${endDate || "any"}`
+        : "";
+    const message = `This will permanently delete audit logs on the server.${rangeHint}\n\nThis action will also be recorded as an audit event.`;
+
+    if (scope === "range" && !hasRange) {
+      showToast("Set a start or end date first to clear a specific period.", "info");
+      return;
+    }
+
+    Alert.alert(title, message, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "DELETE",
+        style: Platform.OS === "ios" ? "destructive" : "destructive",
+        onPress: async () => {
+          try {
+            const params =
+              scope === "range"
+                ? {
+                    startDate: startDate || undefined,
+                    endDate: endDate || undefined,
+                  }
+                : {};
+            const res = await apiClient.adminClearAuditLogs(params, { confirm: "DELETE" });
+            const deleted = res?.deleted ?? res?.data?.deleted ?? 0;
+            showToast(`Cleared ${Number(deleted)} audit log(s).`, "success");
+            setPage(1);
+            await queryClient.invalidateQueries({ queryKey: ["admin-audit-logs"] });
+          } catch (e) {
+            showToast(e?.message || "Failed to clear audit logs.", "error");
+          }
+        },
+      },
+    ]);
+  };
+
   const logsQuery = useQuery({
     queryKey: [
       "admin-audit-logs",
@@ -95,6 +144,8 @@ export default function AdminAuditLogsScreen() {
   });
   const logs = logsQuery.data?.items || [];
   const total = logsQuery.data?.total || 0;
+  const canAnimate = Platform.OS !== "web" && typeof MotiViewComponent === "function";
+  const LogCard = canAnimate ? MotiViewComponent : View;
   const filteredLogs = React.useMemo(() => {
     let list = [...logs];
     return list;
@@ -139,6 +190,41 @@ export default function AdminAuditLogsScreen() {
             {showFilters ? "Hide Filters" : "Show Filters"}
           </Text>
         </TouchableOpacity>
+
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+          <TouchableOpacity
+            onPress={() => confirmAndClear({ scope: "all" })}
+            style={{
+              paddingVertical: 10,
+              paddingHorizontal: 12,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: "rgba(239, 68, 68, 0.35)",
+              backgroundColor: isDark ? "rgba(239, 68, 68, 0.10)" : "rgba(239, 68, 68, 0.08)",
+            }}
+          >
+            <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#ef4444" }}>
+              Clear All Logs
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => confirmAndClear({ scope: "range" })}
+            style={{
+              paddingVertical: 10,
+              paddingHorizontal: 12,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: theme.border,
+              backgroundColor: theme.card,
+              opacity: startDate || endDate ? 1 : 0.5,
+            }}
+          >
+            <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: theme.text }}>
+              Clear Date Range
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         {showFilters && (
           <View
@@ -412,11 +498,15 @@ export default function AdminAuditLogsScreen() {
           </View>
         ) : (
           filteredLogs.map((log, index) => (
-            <MotiView
+            <LogCard
               key={log.id || `${log.action}-${index}`}
-              from={{ opacity: 0, translateY: 10 }}
-              animate={{ opacity: 1, translateY: 0 }}
-              transition={{ type: "timing", duration: 400, delay: index * 40 }}
+              {...(canAnimate
+                ? {
+                    from: { opacity: 0, translateY: 10 },
+                    animate: { opacity: 1, translateY: 0 },
+                    transition: { type: "timing", duration: 400, delay: index * 40 },
+                  }
+                : {})}
               style={{
                 backgroundColor: theme.card,
                 borderRadius: 16,
@@ -450,7 +540,7 @@ export default function AdminAuditLogsScreen() {
               <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 6 }}>
                 {log.createdAt || ""}
               </Text>
-            </MotiView>
+            </LogCard>
           ))
         )}
 

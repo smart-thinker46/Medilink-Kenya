@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Moon, Sun, Monitor, LogOut, Lock } from "lucide-react-native";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import ScreenLayout from "@/components/ScreenLayout";
 import { useAppTheme } from "@/components/ThemeProvider";
@@ -12,6 +13,7 @@ import { useAuthStore } from "@/utils/auth/store";
 import { useI18n } from "@/utils/i18n";
 import { useOnlineUsers } from "@/utils/useOnlineUsers";
 import OnlineStatusChip from "@/components/OnlineStatusChip";
+import { useAppSettingsStore } from "@/utils/appSettings/store";
 
 export default function AdminSettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -22,9 +24,48 @@ export default function AdminSettingsScreen() {
   const { auth, logout } = useAuthStore();
   const { isUserOnline } = useOnlineUsers();
   const isOnline = isUserOnline(auth?.user);
+  const queryClient = useQueryClient();
+  const setContact = useAppSettingsStore((s) => s.setContact);
 
   const [message, setMessage] = useState("");
   const [channel, setChannel] = useState("email");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactAddress, setContactAddress] = useState("");
+  const [contactWebsite, setContactWebsite] = useState("");
+  const [contactWhatsapp, setContactWhatsapp] = useState("");
+
+  const contactQuery = useQuery({
+    queryKey: ["admin", "app-settings", "contact"],
+    queryFn: () => apiClient.adminGetAppContactInfo(),
+  });
+
+  useEffect(() => {
+    const contact = contactQuery.data?.contact || contactQuery.data?.data?.contact;
+    if (!contact || typeof contact !== "object") return;
+    setContactEmail(String(contact.email || ""));
+    setContactPhone(String(contact.phone || ""));
+    setContactAddress(String(contact.address || ""));
+    setContactWebsite(String(contact.website || ""));
+    setContactWhatsapp(String(contact.whatsapp || ""));
+  }, [contactQuery.data]);
+
+  const updateContactMutation = useMutation({
+    mutationFn: (payload) => apiClient.adminUpdateAppContactInfo(payload),
+    onSuccess: async (res) => {
+      const updated = res?.contact || res?.data?.contact;
+      if (updated && typeof updated === "object") {
+        setContact(updated);
+      }
+      showToast("Contact info updated.", "success");
+      await queryClient.invalidateQueries({ queryKey: ["admin", "app-settings", "contact"] });
+      // Keep public app settings in sync too.
+      await queryClient.invalidateQueries({ queryKey: ["app-settings", "contact"] });
+    },
+    onError: (error) => {
+      showToast(error?.message || "Failed to update contact info.", "error");
+    },
+  });
 
   const handleSend = async () => {
     if (!message.trim()) {
@@ -303,6 +344,145 @@ export default function AdminSettingsScreen() {
               </TouchableOpacity>
             );
           })}
+        </View>
+
+        <Text
+          style={{
+            fontSize: 16,
+            fontFamily: "Nunito_700Bold",
+            color: theme.text,
+            marginBottom: 12,
+          }}
+        >
+          App Contact Info
+        </Text>
+        <View
+          style={{
+            backgroundColor: theme.card,
+            borderRadius: 16,
+            padding: 16,
+            borderWidth: 1,
+            borderColor: theme.border,
+            marginBottom: 24,
+            gap: 10,
+          }}
+        >
+          <TextInput
+            placeholder="Support email"
+            placeholderTextColor={theme.textSecondary}
+            value={contactEmail}
+            onChangeText={setContactEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            style={{
+              height: 44,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: theme.border,
+              backgroundColor: theme.surface,
+              paddingHorizontal: 12,
+              color: theme.text,
+              fontSize: 13,
+            }}
+          />
+          <TextInput
+            placeholder="Support phone"
+            placeholderTextColor={theme.textSecondary}
+            value={contactPhone}
+            onChangeText={setContactPhone}
+            keyboardType="phone-pad"
+            style={{
+              height: 44,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: theme.border,
+              backgroundColor: theme.surface,
+              paddingHorizontal: 12,
+              color: theme.text,
+              fontSize: 13,
+            }}
+          />
+          <TextInput
+            placeholder="Address"
+            placeholderTextColor={theme.textSecondary}
+            value={contactAddress}
+            onChangeText={setContactAddress}
+            style={{
+              height: 44,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: theme.border,
+              backgroundColor: theme.surface,
+              paddingHorizontal: 12,
+              color: theme.text,
+              fontSize: 13,
+            }}
+          />
+          <TextInput
+            placeholder="Website (optional)"
+            placeholderTextColor={theme.textSecondary}
+            value={contactWebsite}
+            onChangeText={setContactWebsite}
+            autoCapitalize="none"
+            style={{
+              height: 44,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: theme.border,
+              backgroundColor: theme.surface,
+              paddingHorizontal: 12,
+              color: theme.text,
+              fontSize: 13,
+            }}
+          />
+          <TextInput
+            placeholder="WhatsApp (optional)"
+            placeholderTextColor={theme.textSecondary}
+            value={contactWhatsapp}
+            onChangeText={setContactWhatsapp}
+            autoCapitalize="none"
+            style={{
+              height: 44,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: theme.border,
+              backgroundColor: theme.surface,
+              paddingHorizontal: 12,
+              color: theme.text,
+              fontSize: 13,
+            }}
+          />
+
+          <TouchableOpacity
+            style={{
+              marginTop: 6,
+              backgroundColor: theme.primary,
+              borderRadius: 12,
+              paddingVertical: 12,
+              alignItems: "center",
+              opacity: updateContactMutation.isPending ? 0.7 : 1,
+            }}
+            onPress={() =>
+              updateContactMutation.mutate({
+                email: contactEmail,
+                phone: contactPhone,
+                address: contactAddress,
+                website: contactWebsite,
+                whatsapp: contactWhatsapp,
+              })
+            }
+            disabled={updateContactMutation.isPending}
+          >
+            <Text
+              style={{
+                fontSize: 14,
+                fontFamily: "Inter_600SemiBold",
+                color: "#FFFFFF",
+              }}
+            >
+              {updateContactMutation.isPending ? "Saving..." : "Save Contact Info"}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <Text

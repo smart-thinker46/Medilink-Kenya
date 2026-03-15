@@ -10,6 +10,7 @@ import Button from "@/components/Button";
 import { useAppTheme } from "@/components/ThemeProvider";
 import { useToast } from "@/components/ToastProvider";
 import apiClient from "@/utils/api";
+import { useAppSettingsStore } from "@/utils/appSettings/store";
 
 const ROLE_HOME_PATH = {
   PATIENT: "/(app)/(patient)",
@@ -50,6 +51,7 @@ export default function PrivacySettingsScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useAppTheme();
   const { showToast } = useToast();
+  const contact = useAppSettingsStore((s) => s.contact);
   const [settings, setSettings] = useState(DEFAULT_PRIVACY_SETTINGS);
   const [passwordIntervalDays, setPasswordIntervalDays] = useState(0);
 
@@ -102,7 +104,8 @@ export default function PrivacySettingsScreen() {
     const body = encodeURIComponent(
       "Hello Support,\n\nI am requesting an export of my personal account data.\n\nRegards,\n",
     );
-    const url = `mailto:support@medilink.africa?subject=${subject}&body=${body}`;
+    const email = String(contact?.email || "support@medilink.co.ke").trim();
+    const url = `mailto:${email}?subject=${subject}&body=${body}`;
     const supported = await Linking.canOpenURL(url);
     if (!supported) {
       showToast("Unable to open email app on this device.", "warning");

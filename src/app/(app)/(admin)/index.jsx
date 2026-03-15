@@ -47,6 +47,7 @@ import { getFirstName, getTimeGreeting } from "@/utils/greeting";
 import useAiSpeechPlayer from "@/utils/useAiSpeechPlayer";
 import UserAvatar from "@/components/UserAvatar";
 import { previewReceipt } from "@/utils/receiptExport";
+import { useNotifications } from "@/utils/useNotifications";
 
 export default function AdminOverviewScreen() {
   const router = useRouter();
@@ -57,13 +58,14 @@ export default function AdminOverviewScreen() {
   const { t, formatDateTime } = useI18n();
   const { auth } = useAuthStore();
   const avatarUser = auth?.user || {};
-  const firstName = getFirstName(auth?.user, "Admin");
+  const firstName = getFirstName(avatarUser, "Admin");
   const timeGreeting = getTimeGreeting();
   const queryClient = useQueryClient();
   const { isUserOnline } = useOnlineUsers();
   const { showToast } = useToast();
   const isOnline = isUserOnline(auth?.user);
   const isWide = screenWidth >= 1024;
+  const { notifications, unreadCount } = useNotifications();
   const { speak: speakAiText, isSpeaking: aiSpeaking } = useAiSpeechPlayer({
     onWarn: (message) => showToast(message, "warning"),
     onError: (message) => showToast(message, "error"),
@@ -888,7 +890,8 @@ export default function AdminOverviewScreen() {
       icon: ShieldAlert,
     },
     { key: "chat", title: "Chat", href: "/(app)/(shared)/conversations", icon: MessageCircle },
-    { key: "notifications", title: "Notifications", href: "/(app)/(admin)/notifications", icon: Bell },
+    { key: "inbox", title: "Inbox", href: "/(app)/(shared)/notifications", icon: Bell },
+    { key: "send-notification", title: "Send Notification", href: "/(app)/(admin)/notifications", icon: Mail },
     { key: "email-center", title: "Email Center", href: "/(app)/(admin)/email-center", icon: Mail },
     { key: "video", title: "Video Call", href: "/(app)/(admin)/video-call", icon: Video },
     { key: "settings", title: "Settings", href: "/(app)/(admin)/settings", icon: Settings },
@@ -919,15 +922,16 @@ export default function AdminOverviewScreen() {
             >
               Admin Menu
             </Text>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {sidebarLinks.map((link) => {
-                const Icon = link.icon;
-                const active = pathname === link.href;
-                return (
-                  <TouchableOpacity
-                    key={link.key}
-                    style={{
-                      flexDirection: "row",
+	            <ScrollView showsVerticalScrollIndicator={false}>
+	              {sidebarLinks.map((link) => {
+	                const Icon = link.icon;
+	                const active = pathname === link.href;
+	                const showBadge = link.key === "inbox" && unreadCount > 0;
+	                return (
+	                  <TouchableOpacity
+	                    key={link.key}
+	                    style={{
+	                      flexDirection: "row",
                       alignItems: "center",
                       paddingVertical: 10,
                       paddingHorizontal: 12,
@@ -947,13 +951,36 @@ export default function AdminOverviewScreen() {
                         marginLeft: 12,
                         flex: 1,
                       }}
-                    >
-                      {link.title}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+	                    >
+	                      {link.title}
+	                    </Text>
+	                    {showBadge && (
+	                      <View
+	                        style={{
+	                          minWidth: 20,
+	                          height: 20,
+	                          borderRadius: 10,
+	                          backgroundColor: theme.error,
+	                          paddingHorizontal: 6,
+	                          alignItems: "center",
+	                          justifyContent: "center",
+	                        }}
+	                      >
+	                        <Text
+	                          style={{
+	                            fontSize: 10,
+	                            fontFamily: "Inter_700Bold",
+	                            color: "#FFFFFF",
+	                          }}
+	                        >
+	                          {unreadCount > 99 ? "99+" : unreadCount}
+	                        </Text>
+	                      </View>
+	                    )}
+	                  </TouchableOpacity>
+	                );
+	              })}
+	            </ScrollView>
           </View>
         )}
         <ScrollView
@@ -986,19 +1013,43 @@ export default function AdminOverviewScreen() {
                 borderColor={theme.border}
                 textColor={theme.textSecondary}
               />
-              <TouchableOpacity
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
-                  backgroundColor: theme.surface,
-                  justifyContent: "center",
-                  alignItems: "center",
-                }}
-                onPress={() => router.push("/(app)/(admin)/notifications")}
-              >
-                <Bell color={theme.iconColor} size={20} />
-              </TouchableOpacity>
+	              <View style={{ position: "relative" }}>
+	                <TouchableOpacity
+	                  style={{
+	                    width: 40,
+	                    height: 40,
+	                    borderRadius: 20,
+	                    backgroundColor: theme.surface,
+	                    justifyContent: "center",
+	                    alignItems: "center",
+	                  }}
+	                  onPress={() => router.push("/(app)/(shared)/notifications")}
+	                >
+	                  <Bell color={theme.iconColor} size={20} />
+	                </TouchableOpacity>
+	                {unreadCount > 0 && (
+	                  <View
+	                    style={{
+	                      position: "absolute",
+	                      top: -2,
+	                      right: -2,
+	                      minWidth: 18,
+	                      height: 18,
+	                      borderRadius: 9,
+	                      backgroundColor: theme.error,
+	                      paddingHorizontal: 4,
+	                      alignItems: "center",
+	                      justifyContent: "center",
+	                      borderWidth: 2,
+	                      borderColor: theme.background,
+	                    }}
+	                  >
+	                    <Text style={{ fontSize: 9, color: "#fff", fontFamily: "Inter_700Bold" }}>
+	                      {unreadCount > 9 ? "9+" : unreadCount}
+	                    </Text>
+	                  </View>
+	                )}
+	              </View>
               <TouchableOpacity
                 style={{
                   width: 40,
@@ -1045,12 +1096,84 @@ export default function AdminOverviewScreen() {
               textColor={theme.textSecondary}
             />
           </View>
-          <OnlineStatusChip isOnline={isOnline} theme={theme} style={{ marginTop: 10 }} />
-        </View>
+	          <OnlineStatusChip isOnline={isOnline} theme={theme} style={{ marginTop: 10 }} />
+	        </View>
 
-        <View style={{ paddingHorizontal: 24, marginBottom: 24 }}>
-          <TouchableOpacity
-            onPress={() => router.push("/(app)/(admin)/control-center")}
+          <View style={{ paddingHorizontal: 24, marginBottom: 24 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 10,
+              }}
+            >
+              <Text style={{ fontSize: 16, fontFamily: "Inter_600SemiBold", color: theme.text }}>
+                Recent Notifications
+              </Text>
+              <TouchableOpacity onPress={() => router.push("/(app)/(shared)/notifications")}>
+                <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: theme.primary }}>
+                  View all
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <View
+              style={{
+                borderRadius: 14,
+                borderWidth: 1,
+                borderColor: theme.border,
+                backgroundColor: theme.card,
+                padding: 12,
+              }}
+            >
+              {Array.isArray(notifications) && notifications.length ? (
+                notifications.slice(0, 5).map((item, index) => (
+                  <TouchableOpacity
+                    key={item.id || `notif-${index}`}
+                    onPress={() => router.push("/(app)/(shared)/notifications")}
+                    style={{
+                      paddingVertical: 10,
+                      borderBottomWidth: index === Math.min(4, notifications.length - 1) ? 0 : 1,
+                      borderBottomColor: theme.border,
+                      flexDirection: "row",
+                      alignItems: "flex-start",
+                      gap: 10,
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <View
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 5,
+                        marginTop: 4,
+                        backgroundColor: item?.isRead ? theme.border : theme.success,
+                      }}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: theme.text }}>
+                        {String(item?.title || "Notification")}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 4 }}>
+                        {String(item?.message || "")}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: theme.textTertiary, marginTop: 6 }}>
+                        {item?.createdAt ? formatDateTime(item.createdAt) : ""}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                  No notifications yet.
+                </Text>
+              )}
+            </View>
+          </View>
+	
+	        <View style={{ paddingHorizontal: 24, marginBottom: 24 }}>
+	          <TouchableOpacity
+	            onPress={() => router.push("/(app)/(admin)/control-center")}
             style={{
               borderRadius: 14,
               borderWidth: 1,
